@@ -1,0 +1,30 @@
+{
+  "name": "@toss-sentiment/api-ts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "npx prisma migrate dev",
+    "db:generate": "npx prisma generate",
+    "db:push": "npx prisma db push",
+    "db:studio": "npx prisma studio"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.0",
+    "@prisma/client": "^5.14.0",
+    "axios": "^1.14.0",
+    "dotenv": "^16.4.0",
+    "fastify": "^4.28.0",
+    "node-fetch": "^3.3.0",
+    "playwright": "^1.59.1",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.0",
+    "prisma": "^5.14.0",
+    "tsx": "^4.10.0",
+    "typescript": "^5.4.0"
+  }
+}

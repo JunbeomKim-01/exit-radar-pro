@@ -1,0 +1,8 @@
+npm error code E404
+npm error 404 Not Found - GET https://registry.npmjs.org/@cloudflare%2fcloudflared - Not found
+npm error 404
+npm error 404  The requested resource '@cloudflare/cloudflared@*' could not be found or you do not have permission to access it.
+npm error 404
+npm error 404 Note that you can also install from a
+npm error 404 tarball, folder, http url, or git url.
+npm error A complete log of this run can be found in: /Users/kimjunbeom/.npm/_logs/2026-04-03T01_31_55_879Z-debug-0.log

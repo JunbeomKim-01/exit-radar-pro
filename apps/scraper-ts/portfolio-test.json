@@ -1,0 +1,13 @@
+{
+  "props": {
+    "pageProps": {}
+  },
+  "page": "/",
+  "query": {},
+  "buildId": "c_79f37nakM6FT1V2WA49",
+  "assetPrefix": "/assets/v2",
+  "nextExport": true,
+  "autoExport": true,
+  "isFallback": false,
+  "scriptLoader": []
+}

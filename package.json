@@ -1,0 +1,23 @@
+{
+  "name": "toss-sentiment-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Toss Community Sentiment Analysis Agent",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "web": "npm run dev --workspace=apps/web-gui",
+    "api": "npm run dev --workspace=apps/api-ts",
+    "login": "npm run login --workspace=apps/scraper-ts",
+    "scrape": "npm run scrape --workspace=apps/scraper-ts",
+    "scraper": "npm run dev --workspace=apps/scraper-ts",
+    "classifier": "cd apps/classifier-py && python main.py",
+    "db:migrate": "npm run db:migrate --workspace=apps/api-ts",
+    "db:generate": "npm run db:generate --workspace=apps/api-ts",
+    "docker:up": "docker compose -f docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker-compose.yml down",
+    "clear":"lsof -ti:3000,8001 | xargs kill -9"
+  }
+}

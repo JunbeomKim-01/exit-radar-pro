@@ -1,0 +1,21 @@
+{
+  "name": "@toss-sentiment/scraper-ts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "login": "tsx src/login-agent.ts",
+    "scrape": "tsx src/scraper.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "playwright": "^1.44.0",
+    "dotenv": "^16.4.0",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.10.0",
+    "@types/node": "^20.12.0"
+  }
+}

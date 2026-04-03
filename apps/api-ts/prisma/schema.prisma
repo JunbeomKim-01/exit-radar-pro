@@ -1,0 +1,279 @@
+// Prisma Schema — Toss Community Sentiment Agent
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Post {
+  id         String   @id @default(cuid())
+  source     String   @default("toss")
+  ticker     String?
+  title      String
+  body       String
+  authorHash String   @map("author_hash")
+  authorName String   @default("익명") @map("author_name")
+  createdAt  DateTime @map("created_at")
+  url        String
+  rawJson    String?  @map("raw_json")
+  insertedAt DateTime @default(now()) @map("inserted_at")
+
+  comments         Comment[]
+  sentimentResults SentimentResult[]
+
+  @@index([ticker])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  postId     String   @map("post_id")
+  body       String
+  authorHash String   @map("author_hash")
+  createdAt  DateTime @map("created_at")
+  insertedAt DateTime @default(now()) @map("inserted_at")
+
+  post             Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+  sentimentResults SentimentResult[]
+
+  @@index([postId])
+  @@map("comments")
+}
+
+model SentimentResult {
+  id           String   @id @default(cuid())
+  targetType   String   @map("target_type") // "post" | "comment"
+  targetId     String   @map("target_id")
+  label        String   // "support" | "criticize" | "neutral"
+  confidence   Float
+  rationale    String?
+  modelVersion String   @map("model_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  post    Post?    @relation(fields: [postId], references: [id])
+  postId  String?  @map("post_id")
+  comment Comment? @relation(fields: [commentId], references: [id])
+  commentId String? @map("comment_id")
+
+  @@index([targetType, targetId])
+  @@index([label])
+  @@map("sentiment_results")
+}
+
+model SentimentAggregate {
+  id             String   @id @default(cuid())
+  ticker         String
+  windowType     String   @map("window_type") // "1h" | "24h" | "7d"
+  supportRatio   Float    @map("support_ratio")
+  criticizeRatio Float    @map("criticize_ratio")
+  neutralRatio   Float    @map("neutral_ratio")
+  postCount      Int      @map("post_count")
+  computedAt     DateTime @default(now()) @map("computed_at")
+
+  @@index([ticker, windowType])
+  @@index([computedAt])
+  @@map("sentiment_aggregates")
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  accountName   String   @unique @map("account_name")
+  encryptedBlob String   @map("encrypted_blob")
+  expiresAt     DateTime? @map("expires_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("sessions")
+}
+
+model CrawlJob {
+  id          String    @id @default(cuid())
+  status      String    @default("pending") // "pending" | "running" | "completed" | "failed"
+  ticker      String?
+  postCount   Int       @default(0) @map("post_count")
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  error       String?
+
+  @@index([status])
+  @@map("crawl_jobs")
+}
+
+model Stock {
+  id     String @id @default(cuid())
+  code   String @unique
+  name   String
+  market String?
+
+  watchlistItems Watchlist[]
+  riskSnapshots  RiskSnapshot[]
+
+  @@index([name])
+  @@map("stocks")
+}
+
+// ─────────────────────────────────
+// EXIT-Radar Models
+// ─────────────────────────────────
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  ticker    String   @unique
+  stockId   String?  @map("stock_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  stock Stock? @relation(fields: [stockId], references: [id])
+
+  @@map("watchlist")
+}
+
+model RiskSnapshot {
+  id          String   @id @default(cuid())
+  ticker      String
+  companyName String   @map("company_name")
+  score       Int      @default(0)
+  level       String   @default("Low")  // Low | Medium | High | Critical
+  action      String   @default("보유")   // 보유 | 관망 | 일부익절 | 비중축소
+  summary     String   @default("")
+  asOf        DateTime @default(now()) @map("as_of")
+
+  stockId     String?  @map("stock_id")
+  stock       Stock?   @relation(fields: [stockId], references: [id])
+
+  factors     RiskFactor[]
+
+  @@index([ticker])
+  @@index([asOf])
+  @@map("risk_snapshots")
+}
+
+model RiskFactor {
+  id          String   @id @default(cuid())
+  snapshotId  String   @map("snapshot_id")
+  type        String   // insider_sell | volume_spike | trend_break | sentiment_negative | institution_decrease
+  title       String
+  description String
+  weight      Float    @default(1.0)
+  detectedAt  DateTime @default(now()) @map("detected_at")
+
+  snapshot RiskSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@index([snapshotId])
+  @@map("risk_factors")
+}
+
+model InsiderTrade {
+  id              String   @id @default(cuid())
+  ticker          String
+  insiderName     String   @map("insider_name")
+  role            String
+  side            String   // BUY | SELL
+  shares          Int
+  pricePerShare   Float    @map("price_per_share")
+  transactionDate DateTime @map("transaction_date")
+  filingDate      DateTime @map("filing_date")
+  fetchedAt       DateTime @default(now()) @map("fetched_at")
+
+  @@index([ticker])
+  @@index([transactionDate])
+  @@map("insider_trades")
+}
+
+model InstitutionHolding {
+  id              String   @id @default(cuid())
+  ticker          String
+  institutionName String   @map("institution_name")
+  shares          Int
+  changeShares    Int      @default(0) @map("change_shares")
+  changePercent   Float    @default(0) @map("change_percent")
+  reportDate      DateTime @map("report_date")
+  fetchedAt       DateTime @default(now()) @map("fetched_at")
+
+  @@index([ticker])
+  @@map("institution_holdings")
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  ticker    String
+  title     String
+  body      String
+  level     String   @default("info") // info | warning | danger
+  read      Boolean  @default(false)
+  score     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([ticker])
+  @@index([read])
+  @@map("alerts")
+}
+
+// ─── Trend Reversal Intelligence ───
+
+model MarketIndicatorBar {
+  id          String   @id @default(cuid())
+  date        DateTime @unique
+  nasdaqClose Float    @default(0)
+  nasdaqVol   Float    @default(0)
+  vixClose    Float    @default(0)
+  vxnClose    Float    @default(0)
+  dxyClose    Float    @default(0)
+  wtiClose    Float    @default(0)
+  hyOas       Float    @default(0)
+  dgs2        Float    @default(0)
+  soxClose    Float    @default(0)
+  sourceStatus String  @default("ok") // ok | partial | stale
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([date])
+  @@map("market_indicator_bars")
+}
+
+model ReversalSignal {
+  id              String   @id @default(cuid())
+  date            DateTime
+  signalType      String   // TOP_CANDIDATE | BOTTOM_CANDIDATE
+  score           Int      @default(0)
+  stage           String   @default("OBSERVE") // OBSERVE | WARN | CONFIRMED
+  coreSignals     String   @default("[]") // JSON array
+  supportSignals  String   @default("[]") // JSON array
+  explanation     String   @default("")
+  riskTheme       String   @default("")   // volatility | credit | rate | leadership
+  confidence      Float    @default(0)
+  // Feature snapshot
+  return5d        Float    @default(0)
+  return10d       Float    @default(0)
+  return20d       Float    @default(0)
+  vxnChange3d     Float    @default(0)
+  vxnVs20dma      Float    @default(0)
+  hyOasChange5d   Float    @default(0)
+  hyOasPercentile Float    @default(0)
+  dgs2Change5d    Float    @default(0)
+  soxRelStr5d     Float    @default(0)
+  volumeVs20dma   Float    @default(0)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([date])
+  @@index([signalType])
+  @@map("reversal_signals")
+}
+
+model ReversalBacktest {
+  id             String   @id @default(cuid())
+  ruleId         String
+  sampleCount    Int      @default(0)
+  winRate5d      Float    @default(0)
+  winRate10d     Float    @default(0)
+  avgReturn5d    Float    @default(0)
+  avgReturn10d   Float    @default(0)
+  avgReturn20d   Float    @default(0)
+  maxDrawdownAvg Float    @default(0)
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  @@unique([ruleId])
+  @@map("reversal_backtests")
+}
