@@ -6,9 +6,10 @@ interface TradingViewChartProps {
 }
 
 function getTradingViewSymbol(ticker: string, companyName?: string): string {
-  // 한국 주식 (6자리 숫자)
-  if (/^\d{6}$/.test(ticker)) {
-    return `KRX:${ticker}`;
+  // 한국 주식 (A005930 또는 005930)
+  const krStockMatch = ticker.match(/^A?(\d{6})$/);
+  if (krStockMatch) {
+    return `KRX:${krStockMatch[1]}`;
   }
   
   // 미국 주식 (US...) -> 종목명 기반 주요 티커 매핑
