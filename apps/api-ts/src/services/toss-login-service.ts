@@ -17,7 +17,7 @@ class TossLoginService {
   async startLogin(visitorId: string) {
     // 이미 진행 중인 세션이 있다면 무시 (5분 내)
     const existing = this.sessions.get(visitorId);
-    if (existing && (existing.status === 'pending' || existing.status === 'launching_browser') && Date.now() - existing.lastUpdated < 300000) {
+    if (existing && (existing.status === 'pending' || existing.status === 'launching_browser') && Date.now() - existing.lastUpdated < 600000) {
        return;
     }
 
@@ -79,20 +79,22 @@ class TossLoginService {
         }
       };
 
-      try {
-        await fillPhoneLoginDetails(activePage, details, updateStatus);
-        updateStatus("확인 버튼 클릭됨. 휴대폰 앱에서 승인해 주세요.");
-        return; // 기존 runLoginAgent/runPhoneLoginAgent의 waitForURL 루프가 결과를 처리함
-      } catch (err: any) {
-        logger.error(`[TossLoginService] Failed to fill details on active page:`, err);
-        updateStatus(`정보 입력 실패: ${err.message}`);
-        // 실패 시 새로 시작하도록 내버려둠 (아래 로직으로 진행)
-      }
+      // 백그라운드에서 정보 입력 수행 (API 응답 지연 방지)
+      fillPhoneLoginDetails(activePage, details, updateStatus)
+        .then(() => {
+          updateStatus("확인 버튼 클릭됨. 휴대폰 앱에서 승인해 주세요.");
+        })
+        .catch((err: any) => {
+          logger.error(`[TossLoginService] Failed to fill details on active page:`, err);
+          updateStatus(`정보 입력 실패: ${err.message}`);
+        });
+      
+      return; // 즉시 반환하여 프론트엔드 타임아웃 방지
     }
 
     // 2. 이미 진행 중인 세션이 있다면 무시 (5분 내)
     const existing = this.sessions.get(visitorId);
-    if (existing && (existing.status.includes('중') || existing.status === 'launching_browser') && Date.now() - existing.lastUpdated < 300000) {
+    if (existing && (existing.status.includes('중') || existing.status === 'launching_browser') && Date.now() - existing.lastUpdated < 600000) {
        return;
     }
 

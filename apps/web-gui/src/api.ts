@@ -3,7 +3,7 @@ import axios from 'axios';
 // Fastify Proxy or direct connection (CORS is enabled on API side)
 export const api = axios.create({
   baseURL: '/api',
-  timeout: 10000,
+  timeout: 30000,
 });
 
 /**

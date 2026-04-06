@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 """
-Text Cleaner — 한국어 주식 커뮤니티 텍스트 정제
+Text Cleaner — 텍스트 정제 모듈
+커뮤니티 텍스트 정제
 
 처리 항목:
   - 연속 이모지 제거

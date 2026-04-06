@@ -68,7 +68,17 @@ export async function crawlRoutes(app: FastifyInstance) {
     ], {
       cwd: projectRoot,
       detached: true,
-      stdio: 'ignore'
+      stdio: 'ignore',
+      shell: process.platform === 'win32' // 윈도우에서는 쉘을 통해 실행해야 npx 탐색 가능
+    });
+
+    // 스폰 실패 시 서버 크래시 방지용 에러 리스너
+    child.on('error', async (err) => {
+      logger.error(`수집기 프로세스 시작 실패 (Job: ${job.id}): ${err.message}`);
+      await prisma.crawlJob.update({
+        where: { id: job.id },
+        data: { status: "failed", error: `프로세스 시작 실패: ${err.message}` }
+      });
     });
 
     child.unref(); // 백그라운드 분리

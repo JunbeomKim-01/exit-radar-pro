@@ -256,7 +256,7 @@ export function resolveUnderlyingTicker(ticker: string): string {
 
 /**
  * 메인 함수: 내부자 거래 데이터 수집
- * 1차: SEC Submissions API → 2차: EFTS → 3차: 데모 데이터
+ * 1차: SEC Submissions API → 2차: EFTS
  */
 export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrade[]> {
   const actualTicker = resolveUnderlyingTicker(ticker);
@@ -290,9 +290,9 @@ export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrad
     logger.warn(`SEC EFTS 실패 (${actualTicker}): ${err}`);
   }
 
-  // 3차: 데모 데이터
-  logger.info(`${actualTicker}: SEC API 모두 실패 — 데모 데이터 사용`);
-  return generateDemoInsiderData(actualTicker);
+  // 더미 데이터 폴백 제거
+  logger.info(`${actualTicker}: SEC API 모두 실패 — 리턴 빈 배열`);
+  return [];
 }
 
 function detectSide(source: any): "BUY" | "SELL" {
@@ -313,24 +313,6 @@ function getDateMonthsAgo(months: number): string {
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * 데모용 내부자 거래 데이터 생성
- */
-function generateDemoInsiderData(ticker: string): RawInsiderTrade[] {
-  const roles = ["CEO", "CFO", "Director", "VP", "COO"];
-  const names = ["John Smith", "Sarah Johnson", "Michael Chen", "Emily Davis", "Robert Kim"];
-
-  return Array.from({ length: 5 }, (_, i) => ({
-    insiderName: names[i],
-    role: roles[i],
-    side: (i < 2 ? "BUY" : "SELL") as "BUY" | "SELL",
-    shares: Math.floor(Math.random() * 50000) + 1000,
-    pricePerShare: Math.floor(Math.random() * 200) + 50,
-    transactionDate: new Date(Date.now() - i * 7 * 86400000).toISOString().slice(0, 10),
-    filingDate: new Date(Date.now() - i * 7 * 86400000 + 86400000).toISOString().slice(0, 10),
-  }));
 }
 
 // ─── Institution Holdings (13F) ───
@@ -370,8 +352,8 @@ export async function fetchInstitutionHoldings(ticker: string): Promise<RawInsti
     const filings = res.data?.hits?.hits || [];
 
     if (filings.length === 0) {
-      logger.info(`${actualTicker}: 13F 데이터 없음 — 데모 데이터 사용`);
-      return generateDemoInstitutionData(actualTicker);
+      logger.info(`${actualTicker}: 13F 데이터 없음 — 리턴 빈 배열`);
+      return [];
     }
 
     const holdings: RawInstitutionHolding[] = filings.slice(0, 10).map((filing: any, i: number) => {
@@ -388,29 +370,7 @@ export async function fetchInstitutionHoldings(ticker: string): Promise<RawInsti
     logger.info(`${actualTicker}: ${holdings.length}건 기관 보유 데이터 조회 완료`);
     return holdings;
   } catch (err) {
-    logger.warn(`SEC 기관 보유 조회 실패 (${actualTicker}) — 데모 데이터 사용`);
-    return generateDemoInstitutionData(actualTicker);
+    logger.warn(`SEC 기관 보유 조회 실패 (${actualTicker}) — 리턴 빈 배열`);
+    return [];
   }
-}
-
-function generateDemoInstitutionData(ticker: string): RawInstitutionHolding[] {
-  const institutions = [
-    "Vanguard Group", "BlackRock Inc.", "State Street Corp.",
-    "Fidelity Investments", "JP Morgan Chase", "Capital Group",
-    "T. Rowe Price", "Morgan Stanley", "Goldman Sachs", "Berkshire Hathaway"
-  ];
-
-  return institutions.slice(0, 8).map((name, i) => {
-    const shares = Math.floor(Math.random() * 10000000) + 500000;
-    const changeShares = Math.floor(Math.random() * 600000) - 300000;
-    const changePercent = Math.round((changeShares / shares) * 10000) / 100;
-    const daysAgo = Math.floor(Math.random() * 90) + 30;
-    return {
-      institutionName: name,
-      shares,
-      changeShares,
-      changePercent,
-      reportDate: new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 10),
-    };
-  });
 }

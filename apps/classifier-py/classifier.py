@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Sentiment Classifier — OpenAI LLM 기반 감성 분류기
 
@@ -11,6 +12,7 @@ import os
 import json
 import logging
 from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger("classifier")
 
@@ -127,39 +129,84 @@ confidence 규칙:
 
 class SentimentClassifier:
     def __init__(self):
-        # Groq 지원 추가 (GROQ_API_KEY가 있으면 우선 사용)
-        self.api_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+        # 1. Provider 설정 (ollama | groq | openai)
+        self.provider = os.getenv("LLM_PROVIDER", "openai").lower()
         
-        # Groq를 사용하면 llama 모델, OpenAI면 o3-mini (기본값)
-        if self.api_key.startswith("gsk_"):
-            self.model_version = "llama-3.1-8b-instant"
+        # 2. API Key 및 Base URL 초기 설정
+        if self.provider == "ollama":
+            self.api_key = "ollama"  # Ollama는 보통 키가 필요 없지만 placeholder로 넣음
+            self.base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+            self.model_version = os.getenv("OLLAMA_MODEL", "llama3.1")
+            logger.info(f"Using Local LLM (Ollama): model={self.model_version}, url={self.base_url}")
+        elif self.provider == "groq" or os.getenv("GROQ_API_KEY"):
+            self.api_key = os.getenv("GROQ_API_KEY", "")
             self.base_url = "https://api.groq.com/openai/v1"
+            self.model_version = "llama-3.1-8b-instant"
+            logger.info(f"Using Cloud LLM (Groq): model={self.model_version}")
         else:
+            self.api_key = os.getenv("OPENAI_API_KEY", "")
+            self.base_url = None # Default OpenAI
             self.model_version = "o3-mini"
-            self.base_url = None
+            logger.info(f"Using Cloud LLM (OpenAI): model={self.model_version}")
 
         self._client = None
 
         if not self.api_key or self.api_key.startswith("sk-your"):
-            logger.warning(
-                "⚠️  API 키가 올바르게 설정되지 않았습니다. "
-                "분류 요청 시 더미 결과를 반환합니다."
-            )
+            logger.warning("⚠️ LLM API 키 또는 로컬 설정이 누락되었습니다.")
 
     @property
     def client(self):
         if self._client is None:
             from openai import AsyncOpenAI
+            # Ollama를 사용할 때는 api_key에 아무 값이나 넣어도 됨
             self._client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
         return self._client
+
+    def _extract_json(self, text: str) -> Any:
+        """
+        LLM 응답에서 JSON 부분만 추출합니다. 
+        <think> 태그, 마크다운 코드 블록 등을 제거합니다.
+        """
+        import re
+        try:
+            # 1. <think> 태그 및 내부 내용 삭제
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+            
+            # 2. 마크다운 코드 블록(```json ... ```) 추출
+            code_block_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, flags=re.DOTALL)
+            if code_block_match:
+                text = code_block_match.group(1)
+            
+            # 3. 가장 바깥쪽의 { } 또는 [ ] 찾기
+            start_bracket = text.find('{')
+            start_square = text.find('[')
+            
+            start = -1
+            end = -1
+            
+            # 객체({})인지 배열([])인지 판단
+            if start_bracket != -1 and (start_square == -1 or start_bracket < start_square):
+                start = start_bracket
+                end = text.rfind('}')
+            elif start_square != -1:
+                start = start_square
+                end = text.rfind(']')
+                
+            if start != -1 and end != -1:
+                text = text[start:end+1]
+            
+            return json.loads(text)
+        except Exception as e:
+            logger.warning(f"JSON 파싱 재시도 실패: {e}. 원본 일부: {text[:100]}...")
+            return json.loads(text) # 마지막 시도 (실패 시 예외 발생)
 
     async def classify(
         self,
         id: str,
         title: str,
         body: str,
-        ticker: str | None = None,
-        user_api_key: str | None = None,
+        ticker: Optional[str] = None,
+        user_api_key: Optional[str] = None,
     ) -> ClassifyResult:
         """텍스트를 LLM으로 분류합니다."""
         
@@ -186,10 +233,11 @@ class SentimentClassifier:
                 self.client if self.client else AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
             )
 
-            # user_api_key가 들어올 때 모델 결정
-            model_to_use = "llama-3.1-8b-instant" if active_key.startswith("gsk_") else (
-                "o3-mini" if active_key.startswith("sk-") else self.model_version
-            )
+            # 모델 결정: 기본 설정을 따르되, 사용자 키에 따라 동적 변경 가능
+            model_to_use = self.model_version
+            if user_api_key:
+                if user_api_key.startswith("gsk_"): model_to_use = "llama-3.1-8b-instant"
+                elif user_api_key.startswith("sk-"): model_to_use = "o3-mini"
 
             response = await client.chat.completions.create(
                 model=model_to_use,
@@ -201,7 +249,7 @@ class SentimentClassifier:
             )
 
             content = response.choices[0].message.content or "{}"
-            result = json.loads(content)
+            result = self._extract_json(content)
 
             return ClassifyResult(
                 id=id,
@@ -216,9 +264,9 @@ class SentimentClassifier:
 
     async def classify_batch(
         self,
-        items: list[dict],
-        user_api_key: str | None = None,
-    ) -> list[ClassifyResult]:
+        items: List[Dict[str, Any]],
+        user_api_key: Optional[str] = None,
+    ) -> List[ClassifyResult]:
         """여러 게시글을 하나의 LLM 호출로 일괄 분류합니다."""
         active_key = user_api_key or self.api_key
 
@@ -237,16 +285,23 @@ id: {it["id"]}
 """
 
         batch_system = SYSTEM_PROMPT + """
-
-추가 규칙 (배치 모드):
-- 여러 게시글이 한 번에 입력된다.
-- 각 게시글마다 독립적으로 분류한다.
-- 반드시 JSON 배열( [ {...}, {...}, ... ] )로 출력한다.
-- 각 객체에는 반드시 "id" 필드를 포함하여 어떤 게시글인지 식별 가능하게 한다.
+### 배치 처리 가이드 (대량 분석용)
+- 한 번에 여러 개의 게시글 데이터가 입력됩니다.
+- 각 게시글(id 기준)에 대해 독립적인 분석을 수행하십시오.
+- 결과는 **반드시** JSON 배열 형식 `[ { "id": "...", ... }, ... ]` 하나로만 출력하십시오.
+- 지연시간을 줄이기 위해 부가적인 텍스트(`Here is the result...` 등)를 절대 포함하지 마십시오.
+- 입력된 모든 게시글의 ID가 결과 배열에 포함되도록 하십시오.
 
 출력 스키마:
 [
-  {"id": "...", "label": "support|criticize|neutral", "confidence": 0.0, "reason": "...", "target": "...", "signals": [...]},
+  {
+    "id": "게시글 구분 ID",
+    "label": "support | criticize | neutral",
+    "confidence": 0.0,
+    "reason": "분류 근거 (한 문장)",
+    "target": "분류 대상",
+    "signals": ["핵심 표현1", "핵심 표현2"]
+  },
   ...
 ]
 """
@@ -260,9 +315,10 @@ id: {it["id"]}
 
             client = AsyncOpenAI(**client_args) if user_api_key else self.client
 
-            model_to_use = "llama-3.1-8b-instant" if active_key.startswith("gsk_") else (
-                "o3-mini" if active_key.startswith("sk-") else self.model_version
-            )
+            model_to_use = self.model_version
+            if user_api_key:
+                if user_api_key.startswith("gsk_"): model_to_use = "llama-3.1-8b-instant"
+                elif user_api_key.startswith("sk-"): model_to_use = "o3-mini"
 
             response = await client.chat.completions.create(
                 model=model_to_use,
@@ -274,7 +330,7 @@ id: {it["id"]}
             )
 
             content = response.choices[0].message.content or "[]"
-            parsed = json.loads(content)
+            parsed = self._extract_json(content)
 
             # json_object 모드에서는 최상위가 object일 수 있음
             if isinstance(parsed, dict):
@@ -306,9 +362,9 @@ id: {it["id"]}
     async def summarize(
         self,
         ticker: str,
-        posts: list[dict],
-        user_api_key: str | None = None
-    ) -> dict:
+        posts: List[Dict[str, Any]],
+        user_api_key: Optional[str] = None
+    ) -> Dict[str, Any]:
         """게시글 목록을 바탕으로 AI 감성 요약을 생성합니다."""
         active_key = user_api_key or self.api_key
         if not active_key or active_key.startswith("sk"):
@@ -346,9 +402,10 @@ id: {it["id"]}
                 client_args["base_url"] = "https://api.groq.com/openai/v1" if active_key.startswith("gsk_") else self.base_url
             client = AsyncOpenAI(**client_args)
 
-            model_to_use = "llama-3.1-8b-instant" if active_key.startswith("gsk_") else (
-                "o3-mini" if active_key.startswith("sk-") else self.model_version
-            )
+            model_to_use = self.model_version
+            if user_api_key:
+                if user_api_key.startswith("gsk_"): model_to_use = "llama-3.1-8b-instant"
+                elif user_api_key.startswith("sk-"): model_to_use = "o3-mini"
 
             response = await client.chat.completions.create(
                 model=model_to_use,
@@ -360,7 +417,7 @@ id: {it["id"]}
             )
 
             content = response.choices[0].message.content or "{}"
-            return json.loads(content)
+            return self._extract_json(content)
         except Exception as e:
             logger.error(f"요약 생성 실패: {e}")
             return {"summary": "요약 생성 중 오류가 발생했습니다.", "alert_level": "info", "key_points": []}

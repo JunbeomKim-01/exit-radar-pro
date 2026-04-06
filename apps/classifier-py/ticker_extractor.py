@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Ticker Extractor — 텍스트에서 종목명/티커를 추출합니다.
 
@@ -9,12 +10,13 @@ MVP 구현:
 
 import re
 import logging
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger("ticker-extractor")
 
 
 # 주요 종목명 ↔ 코드 매핑 (MVP용 기본 사전)
-TICKER_MAP: dict[str, str] = {
+TICKER_MAP: Dict[str, str] = {
     # 대형주
     "삼성전자": "005930",
     "SK하이닉스": "000660",
@@ -58,21 +60,21 @@ TICKER_CODE_PATTERN = re.compile(r"\b(\d{6})\b")
 
 
 class TickerExtractor:
-    def __init__(self, custom_map: dict[str, str] | None = None):
+    def __init__(self, custom_map: Optional[Dict[str, str]] = None):
         self.ticker_map = {**TICKER_MAP}
         if custom_map:
             self.ticker_map.update(custom_map)
 
         # 역방향 매핑 (코드 → 이름들)
-        self.code_to_names: dict[str, list[str]] = {}
+        self.code_to_names: Dict[str, List[str]] = {}
         for name, code in self.ticker_map.items():
             if code not in self.code_to_names:
                 self.code_to_names[code] = []
             self.code_to_names[code].append(name)
 
-    def extract(self, text: str) -> list[str]:
+    def extract(self, text: str) -> List[str]:
         """텍스트에서 종목 코드(티커)를 추출합니다."""
-        found_tickers: set[str] = set()
+        found_tickers: Set[str] = set()
 
         # 1. 6자리 숫자 코드 직접 매칭
         for match in TICKER_CODE_PATTERN.finditer(text):

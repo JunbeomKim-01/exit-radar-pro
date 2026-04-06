@@ -80,6 +80,17 @@ model SentimentAggregate {
   @@map("sentiment_aggregates")
 }
 
+model SentimentInsight {
+  id          String   @id @default(cuid())
+  ticker      String   @unique
+  summary     String
+  alertLevel  String   @map("alert_level")
+  keyPoints   String   @default("[]") @map("key_points")
+  computedAt  DateTime @default(now()) @map("computed_at")
+
+  @@map("sentiment_insights")
+}
+
 model Session {
   id            String   @id @default(cuid())
   accountName   String   @unique @map("account_name")

@@ -78,34 +78,44 @@ async function main() {
       }
 
       try {
-        console.log("🚀 API 서버로 데이터 전송 중 (분할 전송 시작)...");
+        console.log("🚀 API 서버로 데이터 전송 중...");
         
-        // 5개씩 끊어서 전송하여 프로그레스 업데이트 유도
-        const chunkSize = 5;
-        for (let i = 0; i < posts.length; i += chunkSize) {
-          const chunk = posts.slice(i, i + chunkSize);
-          const isLastChunk = (i + chunkSize >= posts.length);
-          
-          const response = await fetch("http://localhost:3000/crawl/save", {
+        if (posts.length === 0) {
+          // 수집된 게시글이 없어도 작업 완료 처리를 위해 빈 데이터 전송
+          await fetch("http://localhost:3000/crawl/save", {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ 
-              jobId, 
-              posts: chunk,
-              isLastChunk 
-            }),
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jobId, posts: [], isLastChunk: true }),
           });
-          
-          if (!response.ok) {
-            throw new Error(`API response error: ${response.status}`);
+          console.log("ℹ️ 신규 게시글이 없어 빈 결과로 작업을 종료합니다.");
+        } else {
+          // 일괄 처리 효율성 극대화: 25개씩 끊어서 전송 (사용자 요청에 따라 한 번에 대량 처리)
+          const chunkSize = 25;
+          for (let i = 0; i < posts.length; i += chunkSize) {
+            const chunk = posts.slice(i, i + chunkSize);
+            const isLastChunk = (i + chunkSize >= posts.length);
+            
+            const response = await fetch("http://localhost:3000/crawl/save", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ 
+                jobId, 
+                posts: chunk,
+                isLastChunk 
+              }),
+            });
+            
+            if (!response.ok) {
+              throw new Error(`API response error: ${response.status}`);
+            }
+            
+            console.log(`✅ Chunk (${i + 1}~${Math.min(i + chunkSize, posts.length)}) 전송 완료 (마지막: ${isLastChunk})`);
           }
-          
-          console.log(`✅ Chunk (${i + 1}~${Math.min(i + chunkSize, posts.length)}) 전송 완료 (마지막: ${isLastChunk})`);
         }
         
-        console.log("✨ 모든 데이터 전송 완료");
+        console.log("✨ 모든 데이터 통합 및 전송 프로세스 완료");
       } catch (err) {
         console.error("❌ API 전송 실패:", err);
       }

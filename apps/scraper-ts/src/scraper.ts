@@ -120,7 +120,7 @@ export class CommunityScraper {
 
       logger.info("커뮤니티 피드 로딩 대기 중...");
       await page.waitForSelector(
-        '[data-section-name="커뮤니티__게시글"][data-post-anchor-id]',
+        'button[id^="header::image::"], label.j7y7c73',
         { timeout: 15_000 }
       );
 
@@ -151,49 +151,62 @@ export class CommunityScraper {
             return match ? parseInt(match[1].replace(/,/g, ""), 10) : 0;
           };
 
-          const cards = Array.from(
-            document.querySelectorAll(
-              '[data-section-name="커뮤니티__게시글"][data-post-anchor-id]'
-            )
-          );
-
+          // 프로필 이미지 버튼을 베이스로 각 게시글 카드 식별
+          const profileBtns = Array.from(document.querySelectorAll('button[id^="header::image::"]'));
           const results = [];
 
-          for (const card of cards) {
-            const postId = card.getAttribute("data-post-anchor-id")?.trim() ?? "";
+          for (const btn of profileBtns) {
+            const postId = btn.id.split("::").pop();
             if (!postId) continue;
 
-            const isRepost =
-              text(card.querySelector(".tw4l-1e8fj1a2 .tw4l-1e8fj1a9")).includes("님이 리포스트함");
+            // 게시글 컨테이너 (각 게시글의 최상위 부모 후보)
+            // 보통 button -> div -> section 또는 특정 클래스의 div
+            const card = btn.closest('div[class*="_1657u9f"]') || btn.parentElement?.parentElement?.parentElement;
+            if (!card) continue;
 
-            const headerLabel = card.querySelector('label[for^="header::image::"]');
-            const author = text(headerLabel?.querySelector(".j7y7c72"));
+            const headerLabel = card.querySelector('label.j7y7c73') || card.querySelector('label[for^="header::image::"]');
+            if (!headerLabel) continue;
 
-            const spans = headerLabel ? headerLabel.querySelectorAll("span") : [];
-            const headerMeta = text(spans[1] || spans[0]);
-
-            const cleanMeta = headerMeta.replace(/\s*\(수정됨\)/, "").trim();
-            const timeMatch = cleanMeta.match(/^(방금|\d+\s*(?:분|시간|시|일)|(?:\d{4}년\s*)?\d+월\s*\d+일)/);
-            const time = timeMatch ? timeMatch[1].trim() : "방금";
-
-            const boardMatch = headerMeta.match(/・\s*([^\s]+?)에 남긴 글/);
-            const boardName = boardMatch ? boardMatch[1].trim() : "toss_" + (location.pathname.split("/")[2] || "");
-
-            let body = "";
-            const bodyEl =
-              card.querySelector(".tc3tm85 ._1xixuox1") ||
-              card.querySelector(".tc3tm85") ||
-              card.querySelector('[class*="_1xixuox"]');
-
-            if (bodyEl) {
-              body = text(bodyEl);
+            const headerDiv = headerLabel.querySelector("div");
+            const spans = headerDiv ? Array.from(headerDiv.querySelectorAll(":scope > span")) : [];
+            
+            // 1. 이름 및 태그 추출 (첫 번째 span)
+            // '차트신공<span...>1억대 자산가</span>' 형태 대응
+            const nameSpan = spans[0];
+            let author = "";
+            let identityTag = "";
+            
+            if (nameSpan) {
+              const badge = nameSpan.querySelector("span");
+              if (badge) {
+                identityTag = text(badge);
+                const clone = nameSpan.cloneNode(true);
+                const nestedSpan = clone.querySelector("span");
+                if (nestedSpan) nestedSpan.remove();
+                author = text(clone);
+              } else {
+                author = text(nameSpan);
+              }
             }
+            if (!author) author = "익명";
 
+            // 2. 시간 추출 (마지막 span) 
+            const timeSpan = spans[spans.length - 1];
+            const time = timeSpan ? text(timeSpan).split("·")[0].trim() : "방금";
+
+            // 3. 본문 추출
+            // Header Label 근처의 텍스트 영역 또는 특정 클래스 탐색
+            const bodyEl = 
+              card.querySelector('div[class*="_1xixuox1"]') || 
+              card.querySelector('span[class*="_1xixuox1"]') ||
+              headerLabel.nextElementSibling ||
+              headerLabel.parentElement?.nextElementSibling;
+              
+            let body = text(bodyEl);
             body = body.replace(/\\.\\.\\.\\s*더 보기/g, "").trim();
 
-            let title = ""; // 토스 커뮤니티는 타이틀이 따로 없으므로 비워둠
-
-            if (!body || body.length < 3) continue;
+            // 본문이 너무 짧거나 헤더 정보와 중복되는 경우 걸러내기
+            if (!body || body.length < 2 || body === author) continue;
 
             const likeCount = extractCountFromButton(card, "좋아요 버튼");
             const commentCount = extractCountFromButton(card, "댓글 펼치기 버튼");
@@ -202,13 +215,14 @@ export class CommunityScraper {
               postId,
               author,
               time,
-              boardName,
-              title,
+              boardName: "toss_" + (location.pathname.split("/")[2] || ""),
+              title: "",
               body,
               likeCount,
               commentCount,
               url: location.origin + location.pathname + "#" + postId,
-              isRepost,
+              isRepost: false,
+              identityTag, // 메타데이터용 (추후 활용)
             });
           }
 
@@ -337,28 +351,33 @@ export class CommunityScraper {
    */
   private async clickLatestSortTab(page: Page): Promise<void> {
     try {
-      // "최신순" 버튼/탭 찾기
-      const latestTab = await page.$('button:has-text("최신순"), [role="tab"]:has-text("최신순"), a:has-text("최신순")');
-      if (latestTab) {
-        await latestTab.click();
-        logger.info("✅ '최신순' 정렬 탭 클릭 완료");
-        await page.waitForTimeout(2000);
-      } else {
-        // 텍스트 기반 폴백
-        const buttons = await page.$$('button, [role="tab"]');
-        for (const btn of buttons) {
-          const text = await btn.textContent();
-          if (text?.includes("최신순") || text?.includes("최신")) {
-            await btn.click();
-            logger.info("✅ '최신순' 정렬 탭 클릭 완료 (폴백)");
-            await page.waitForTimeout(2000);
-            return;
+      // 1. 현재 "인기순" 버튼 찾기 (최신 UI는 토글 버튼 형태)
+      const sortBtn = await page.$('button:has-text("인기순"), button:has-text("최신순")');
+      
+      if (sortBtn) {
+        const currentText = await sortBtn.textContent();
+        if (currentText?.includes("인기순")) {
+          await sortBtn.click();
+          logger.info("✅ '인기순' 버튼 클릭하여 정렬 변경 시도");
+          await page.waitForTimeout(1000);
+          
+          // 드롭다운이나 토글 메뉴에서 "최신순" 선택
+          const latestOption = await page.$('li:has-text("최신순"), button:has-text("최신순"), [role="option"]:has-text("최신순")');
+          if (latestOption) {
+            await latestOption.click();
+            logger.info("✅ 정렬 메뉴에서 '최신순' 선택 완료");
+          } else {
+             logger.info("ℹ️ 명시적 '최신순' 옵션 없음 - 토글되었을 가능성 확인");
           }
+          await page.waitForTimeout(2000);
+        } else {
+          logger.info("ℹ️ 이미 '최신순' 정렬 상태입니다.");
         }
-        logger.info("ℹ️ '최신순' 탭을 찾지 못함 - 기본 피드 순서 사용");
+      } else {
+        logger.info("ℹ️ 정렬 버튼을 찾지 못함 - 기본 피드 사용");
       }
     } catch (err) {
-      logger.warn("최신순 탭 클릭 실패 (무시하고 계속 수집):", err);
+      logger.warn("정렬 탭 변경 실패 (무시하고 계속 수집):", err);
     }
   }
 

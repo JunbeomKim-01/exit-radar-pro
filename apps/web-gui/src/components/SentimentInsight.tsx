@@ -27,7 +27,14 @@ export function SentimentInsight({ insight, loading }: SentimentInsightProps) {
     );
   }
 
-  if (!insight) return null;
+  if (!insight) {
+    return (
+      <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+        <Info size={20} style={{ marginBottom: '8px', opacity: 0.5 }} />
+        <p>현재 분석된 데이터가 없습니다.<br/>[START SYNC] 버튼을 눌러 분석을 시작하세요.</p>
+      </div>
+    );
+  }
 
   const getAlertConfig = (level: string) => {
     switch (level) {

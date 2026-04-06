@@ -315,12 +315,23 @@ async function trySwitchToQR(page: Page, updateStatus: Function, accountName: st
 
 async function trySwitchToPhoneLogin(page: Page, updateStatus: Function) {
   updateStatus("휴대폰 번호 로그인 탭으로 전환 중...");
-  const phoneTabSelector = 'button:has-text("휴대폰 번호로 로그인")';
+  const phoneTabSelector = 'button:has-text("휴대폰 번호로 로그인"), [role="tab"]:has-text("휴대폰 번호"), button:contains("휴대폰")';
   
+  const verifySwitch = async () => {
+    return await page.evaluate(() => {
+      const texts = (document as any).body.innerText;
+      return texts.includes('이름') || texts.includes('생년월일');
+    });
+  };
+
   const switchViaJS = async () => {
     return await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, [role="button"]'));
-      const phoneBtn = btns.find(b => (b as any).innerText?.includes('휴대폰 번호')) as HTMLElement;
+      const btns = Array.from(document.querySelectorAll('button, [role="button"], [role="tab"]'));
+      const phoneBtn = btns.find(b => {
+        const text = (b as HTMLElement).innerText || "";
+        return text.includes('휴대폰 번호') || text.includes('휴대폰 로그인');
+      }) as HTMLElement;
+      
       if (phoneBtn) {
         ['mousedown', 'mouseup', 'click'].forEach(evtType => {
           phoneBtn.dispatchEvent(new MouseEvent(evtType, { bubbles: true, cancelable: true, view: window, buttons: 1 }));
@@ -333,38 +344,73 @@ async function trySwitchToPhoneLogin(page: Page, updateStatus: Function) {
 
   try {
     // 1. Playwright 클릭 시도
-    await page.waitForSelector(phoneTabSelector, { timeout: 5000 });
+    await page.waitForSelector(phoneTabSelector, { timeout: 8000 });
     await page.click(phoneTabSelector, { force: true });
+    await page.waitForTimeout(1000);
     
-    // 2. JS 기반 Triple-Strike 백업
+    if (await verifySwitch()) {
+      updateStatus("휴대폰 번호 로그인 탭 전환 완료 (Verified)");
+      return;
+    }
+    
+    // 2. JS 기반 백업
     await switchViaJS();
+    await page.waitForTimeout(1500);
     
-    updateStatus("휴대폰 번호 로그인 탭 전환 완료");
+    if (await verifySwitch()) {
+      updateStatus("휴대폰 번호 로그인 탭 전환 완료 (JS Verified)");
+    } else {
+      updateStatus("탭 전환 진행됨 (수동 입력 필요할 수 있음)");
+    }
   } catch (e: any) {
     // 3. 최종 JS 강제 시도
-    const success = await switchViaJS();
-    if (success) {
-      updateStatus("휴대폰 전환 명령 전송됨 (JS)");
+    await switchViaJS();
+    await page.waitForTimeout(2000);
+    if (await verifySwitch()) {
+      updateStatus("휴대폰 전환 성공 (Catch Verified)");
     } else {
-      updateStatus("탭 전환 실패 (확인 필요)");
+      updateStatus("탭 전환 실패 - 수동 조작을 권장합니다.");
     }
   }
 }
 
 export async function fillPhoneLoginDetails(page: Page, details: { name: string, birthday: string, phone: string }, updateStatus: Function) {
+  updateStatus("정보 입력 준비 중...");
+  
+  // 탭 전환이 아직이라면 다시 시도 (안정성 강화)
+  const isFormVisible = await page.evaluate(() => {
+    return document.querySelector('input[placeholder*="이름"]') !== null;
+  });
+  
+  if (!isFormVisible) {
+    updateStatus("입력 폼이 보이지 않아 탭 재전환을 시도합니다...");
+    await trySwitchToPhoneLogin(page, updateStatus);
+    await page.waitForTimeout(2000);
+  }
+
   updateStatus("정보 입력 중 (이름, 생년월일, 전화번호)...");
   
-  // 1. 이름 입력 (이방식은 IME 입력을 위해 이벤트를 강제로 발생시킵니다)
-  const nameSelector = 'input[placeholder="이름"]';
-  await page.waitForSelector(nameSelector, { timeout: 10000 });
-  await page.fill(nameSelector, details.name);
+  // 1. 이름 입력
+  const nameSelector = 'input[placeholder*="이름"], input[name*="name"], input[autocomplete*="name"]';
+  try {
+    await page.waitForSelector(nameSelector, { timeout: 12000, state: 'visible' });
+    await page.fill(nameSelector, details.name);
+  } catch (e) {
+    updateStatus("이름 입력 필드를 찾지 못했습니다. 탭 재확인 후 다시 시도합니다.");
+    await trySwitchToPhoneLogin(page, updateStatus);
+    await page.waitForTimeout(2000);
+    await page.waitForSelector(nameSelector, { timeout: 8000 });
+    await page.fill(nameSelector, details.name);
+  }
+  
   await page.dispatchEvent(nameSelector, 'input', { bubbles: true });
   await page.dispatchEvent(nameSelector, 'change', { bubbles: true });
   await page.dispatchEvent(nameSelector, 'blur', { bubbles: true });
   await page.waitForTimeout(500);
   
   // 2. 생년월일 입력
-  const birthdaySelector = 'input[placeholder*="생년월일"]';
+  const birthdaySelector = 'input[placeholder*="생년월일"], input[placeholder*="YYMMDD"], input[name*="birth"]';
+  await page.waitForSelector(birthdaySelector, { timeout: 5000 });
   await page.fill(birthdaySelector, details.birthday);
   await page.dispatchEvent(birthdaySelector, 'input', { bubbles: true });
   await page.dispatchEvent(birthdaySelector, 'change', { bubbles: true });
@@ -372,7 +418,8 @@ export async function fillPhoneLoginDetails(page: Page, details: { name: string,
   await page.waitForTimeout(500);
   
   // 3. 전화번호 입력
-  const phoneSelector = 'input[placeholder="휴대폰 번호"]';
+  const phoneSelector = 'input[placeholder*="휴대폰 번호"], input[placeholder*="전화번호"], input[name*="phone"]';
+  await page.waitForSelector(phoneSelector, { timeout: 5000 });
   await page.fill(phoneSelector, details.phone);
   await page.dispatchEvent(phoneSelector, 'input', { bubbles: true });
   await page.dispatchEvent(phoneSelector, 'change', { bubbles: true });

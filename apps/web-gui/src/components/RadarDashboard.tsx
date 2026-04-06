@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Shield, AlertTriangle, Trash2, RefreshCw, MessageSquare, Activity, Wallet, TrendingUp, BarChart2
@@ -122,7 +122,10 @@ export function RadarDashboard() {
   const [scrapProgress, setScrapProgress] = useState("");
   const [scrapCount, setScrapCount] = useState(20);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [sentimentLoading, setSentimentLoading] = useState(false);
   const [marketContentTab, setMarketContentTab] = useState<'insiders' | 'institutions'>('insiders');
+
+  const currentTickerRef = useRef<string | null>(null);
 
   const sortedWatchlist = [...watchlist].sort((a, b) => {
     if (portfolioSortBy === 'return') {
@@ -199,7 +202,8 @@ export function RadarDashboard() {
         currentValue: (pi.quantity * pi.currentPrice)
       } as unknown as WatchlistItem));
       setWatchlist(newWatchlist);
-      if (p.items.length > 0) handleSelectTicker(p.items[0].ticker);
+      // 포트폴리오 동기화 후 레이더 화면으로 자동 전환하지 않음 (사용자 선택 존중)
+      // if (p.items.length > 0) handleSelectTicker(p.items[0].ticker);
     } catch(e: any) {
       if (e.response?.status === 401) {
         if (confirm("토스증권 세션이 만료되었습니다. 지금 로그인을 시도할까요?")) handleTossLogin();
@@ -255,32 +259,67 @@ export function RadarDashboard() {
   };
 
   const handleSelectTicker = async (ticker: string) => {
+    currentTickerRef.current = ticker;
     setSelectedTicker(ticker);
     setDetailLoading(true);
-    const existing = watchlist.find(it => it.ticker === ticker);
-    setDetail({ ticker, companyName: existing?.stock?.name || existing?.companyName || 'LOADING...', score: 0, level: 'Analyzing' } as any);
+    setSentimentLoading(true);
 
-    const [summary, sigs, ins, inst, ratio, timeline, posts, insight] = await Promise.all([
+    // 1. 기존 데이터 즉시 초기화 (Stale State 방지)
+    setDetail(null);
+    setSignals([]);
+    setInsiders([]);
+    setInstitutions([]);
+    setRatioData(null);
+    setTimelineData(null);
+    setPostsData(null);
+    setInsightData(null);
+
+    // 모바일 경험 최적화: 클릭 즉시 화면을 띄우고 내부 데이터는 로딩 상태로 표시
+    if (isMobile) setShowMobileDetail(true);
+
+    const existing = watchlist.find(it => it.ticker === ticker);
+    // 즉각적인 피드백을 위해 최소한의 종목 정보만 우선 설정
+    setDetail({ 
+      ticker, 
+      companyName: existing?.stock?.name || existing?.companyName || 'LOADING...', 
+      score: 0, 
+      level: 'Analyzing' 
+    } as any);
+
+    // Phase 1: Essential Metadata (Chart, Signals, Flow) - FAST
+    const [summary, sigs, ins, inst] = await Promise.all([
       safeFetch(fetchTickerSummary(ticker), null),
       safeFetch(fetchTickerSignals(ticker), []),
       safeFetch(fetchTickerInsiders(ticker), []),
-      safeFetch(fetchTickerInstitutions(ticker), []),
-      safeFetch(fetchSentimentRatio(ticker, '24h'), null),
-      safeFetch(fetchSentimentTimeline(ticker, 7), null),
-      safeFetch(fetchRecentPosts(ticker, 100), null), 
-      safeFetch(fetchSentimentInsight(ticker), null)
+      safeFetch(fetchTickerInstitutions(ticker), [])
     ]);
     
+    // 레이스 컨디션 가드: 현재 선택된 티커와 일치할 때만 상태 업데이트
+    if (currentTickerRef.current !== ticker) return;
+
     if (summary) setDetail(summary as RiskSnapshot);
     setSignals(sigs as RiskFactor[]);
     setInsiders(ins as InsiderTrade[]);
     setInstitutions(inst as InstitutionHolding[]);
-    setRatioData(ratio as SentimentRatioResponse);
-    setTimelineData(timeline as SentimentTimelineResponse);
-    setPostsData(posts as PostsResponse);
-    setInsightData(insight as SentimentInsightType);
-    setDetailLoading(false);
-    if (isMobile) setShowMobileDetail(true);
+    setDetailLoading(false); // Essential data loaded!
+
+    // Phase 2: Heavy AI Data (Summaries, Ratios) - PROGRESSIVE LOADING
+    // 모든 데이터가 로드될 때까지 기다리지 않고, 도착하는 순서대로 화면에 업데이트 (체감 속도 개선)
+    safeFetch(fetchRecentPosts(ticker, 100), null).then(posts => {
+      if (currentTickerRef.current === ticker) setPostsData(posts as PostsResponse);
+    });
+    safeFetch(fetchSentimentRatio(ticker, '24h'), null).then(ratio => {
+      if (currentTickerRef.current === ticker) setRatioData(ratio as SentimentRatioResponse);
+    });
+    safeFetch(fetchSentimentTimeline(ticker, 7), null).then(timeline => {
+      if (currentTickerRef.current === ticker) setTimelineData(timeline as SentimentTimelineResponse);
+    });
+    safeFetch(fetchSentimentInsight(ticker), null).then(insight => {
+        if (currentTickerRef.current === ticker) {
+            setInsightData(insight as SentimentInsightType);
+            setSentimentLoading(false); // 최종 로딩 완료
+        }
+    });
   };
 
   const resolveUnderlyingTicker = (ticker: string) => {
@@ -346,10 +385,10 @@ export function RadarDashboard() {
           <TrendReversalTab />
         ) : (
           <div className="terminal-grid" style={{ height: '100%', position: 'relative' }}>
-            <AnimatePresence mode="wait">
+            <AnimatePresence>
               {isMobile ? (
                 showMobileDetail ? (
-                  <motion.div key="mobile-detail" initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="mobile-detail-overlay">
+                  <motion.div key={`mobile-detail-${selectedTicker}`} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="mobile-detail-overlay">
                     <div className="detail-header">
                        <button onClick={() => setShowMobileDetail(false)} className="back-btn"><TrendingUp size={20} style={{ transform: 'rotate(-90deg)' }} /> 뒤로</button>
                        <div style={{ textAlign: 'right' }}>
@@ -407,7 +446,7 @@ export function RadarDashboard() {
 
                           {detailSubTab === 'social' && (
                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                               <div className="mobile-section"><h3 className="section-title"><MessageSquare size={14} /> 커뮤니티 투심</h3>{insightData && <SentimentInsight insight={insightData} loading={detailLoading} />}</div>
+                               <div className="mobile-section"><h3 className="section-title"><MessageSquare size={14} /> 커뮤니티 투심</h3>{(insightData || sentimentLoading) && <SentimentInsight insight={insightData} loading={sentimentLoading} />}</div>
                                <div className="mobile-section" style={{ height: '240px' }}><h3 className="section-title"><Activity size={14} /> 감성 타임라인</h3>{timelineData && <SentimentTimeline timeline={timelineData.timeline} />}</div>
                                <div style={{ marginTop: '20px' }}>{ratioData && <SentimentRatio {...ratioData} />}</div>
                                <div className="smart-sync-section compact" style={{ margin: '16px 0', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
@@ -416,6 +455,10 @@ export function RadarDashboard() {
                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>LIMIT</span><input type="number" value={scrapCount} onChange={(e) => setScrapCount(Number(e.target.value))} style={{ width: '40px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '11px', textAlign: 'center' }}/></div>
                                   </div>
                                   <button onClick={handleTriggerScrap} disabled={isScraping} style={{ width: '100%', padding: '8px', background: 'var(--accent-brand)', color: '#000', borderRadius: '4px', fontSize: '11px', fontWeight: 900 }}>START SYNC</button>
+                               </div>
+                               <div style={{ borderTop: '1px solid var(--border-color)', padding: '16px 0' }}>
+                                 <h3 className="section-title"><MessageSquare size={14} /> 최신 게시글</h3>
+                                 <PostList posts={postsData?.posts || []} />
                                </div>
                             </motion.div>
                           )}
@@ -491,7 +534,7 @@ export function RadarDashboard() {
                        </div>
                    </motion.aside>
 
-                   <motion.main key="desktop-main" initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-panel)', height: '100%' }}>
+                   <motion.main key={`desktop-main-${selectedTicker}`} initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-panel)', height: '100%' }}>
                       {!selectedTicker || !detail ? (
                         <div className="empty-state" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontWeight: 800 }}>PENDING_TICKER_SELECTION</div>
                       ) : (
@@ -509,10 +552,10 @@ export function RadarDashboard() {
                       )}
                    </motion.main>
 
-                   <motion.aside key="desktop-right" initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ width: 'clamp(350px, 22vw, 400px)', flexShrink: 0, height: '100%' }}>
+                   <motion.aside key={`desktop-right-${selectedTicker}`} initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ width: 'clamp(350px, 22vw, 400px)', flexShrink: 0, height: '100%' }}>
                       <div className="terminal-header"><span>SOCIAL_SENTIMENT_CORE</span></div>
                       <div className="terminal-content" style={{ padding: 0, overflowY: 'auto' }}>
-                         {insightData && <div style={{ padding: '20px 16px' }}><SentimentInsight insight={insightData} loading={detailLoading} /></div>}
+                         {(insightData || sentimentLoading) && <div style={{ padding: '20px 16px' }}><SentimentInsight insight={insightData} loading={sentimentLoading} /></div>}
                          <div style={{ height: '240px', padding: '0 16px', marginBottom: '16px' }}>{timelineData && <SentimentTimeline timeline={timelineData.timeline} />}</div>
                           <div className="smart-sync-section" style={{ margin: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}><div className="sync-status"><div className={isScraping ? "sync-dot pulse" : ""} style={{ background: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)', width: '6px', height: '6px', borderRadius: '50%' }} /><span style={{ fontSize: '11px', fontWeight: 900, color: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)' }}>{isScraping ? "SCRAPING_ENGINE_ACTIVE" : "ENGINE_IDLE"}</span></div></div>
@@ -530,27 +573,78 @@ export function RadarDashboard() {
       </div>
 
       {remoteLoginActive && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: 'rgba(0,0,0,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-          <div style={{ background: 'var(--bg-panel)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', width: '100%', maxWidth: '500px', textAlign: 'center' }}>
-            <h3 style={{ marginBottom: '20px' }}>TOSS LOGIN</h3>
-            {loginMethod === 'qr' ? (
-              <div>{liveScreenshot ? <img src={`data:image/jpeg;base64,${liveScreenshot}`} style={{ width: '100%', borderRadius: '8px' }} /> : 'Loading...'}</div>
-            ) : (
-              <form onSubmit={handleTossPhoneLogin} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <input type="text" placeholder="NAME" value={phoneDetails.name} onChange={e => setPhoneDetails({...phoneDetails, name: e.target.value})} style={{ padding: '12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff' }} />
-                <input type="text" placeholder="YYMMDD" value={phoneDetails.birthday} onChange={e => setPhoneDetails({...phoneDetails, birthday: e.target.value})} style={{ padding: '12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff' }} />
-                <input type="text" placeholder="PHONE" value={phoneDetails.phone} onChange={e => setPhoneDetails({...phoneDetails, phone: e.target.value})} style={{ padding: '12px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff' }} />
-                <button type="submit" style={{ padding: '12px', background: 'var(--accent-brand)' }}>START AUTH</button>
-              </form>
-            )}
-            <div style={{ marginTop: '20px', display: 'flex', gap: '12px' }}>
-              <button onClick={() => setRemoteLoginActive(false)}>CLOSE</button>
-              <button onClick={() => setLoginMethod(loginMethod === 'qr' ? 'phone' : 'qr')}>SWITCH METHOD</button>
-              <button onClick={handleManualLoginClick}>FORCE CLICK LOGIN</button>
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
+        >
+          <motion.div 
+            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
+            style={{ background: 'var(--bg-panel)', padding: '32px', borderRadius: '24px', border: '1px solid var(--border-color)', width: '100%', maxWidth: '560px', boxShadow: '0 24px 48px rgba(0,0,0,0.5)', textAlign: 'center' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '24px' }}>
+              <div style={{ width: '12px', height: '12px', background: 'var(--accent-brand)', borderRadius: '50%', boxShadow: '0 0 10px var(--accent-brand)' }} />
+              <h3 style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '0.05em', color: '#fff', margin: 0 }}>TOSS SECURE AUTH</h3>
             </div>
-            <div style={{ marginTop: '12px', color: 'var(--accent-brand)' }}>{loginStatus}</div>
-          </div>
-        </div>
+
+            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px', minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {loginMethod === 'qr' ? (
+                <div style={{ width: '100%' }}>
+                  {liveScreenshot ? (
+                    <img src={`data:image/jpeg;base64,${liveScreenshot}`} style={{ width: '100%', borderRadius: '12px', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }} />
+                  ) : (
+                    <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}><div className="animate-pulse" style={{ marginBottom: '12px' }}><RefreshCw size={32} /></div>QR 코드를 생성 중입니다...</div>
+                  )}
+                </div>
+              ) : (
+                <form onSubmit={handleTossPhoneLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>USER_NAME</label>
+                    <input type="text" placeholder="홍길동" value={phoneDetails.name} onChange={e => setPhoneDetails({...phoneDetails, name: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>BIRTH_DATE (YYMMDD)</label>
+                    <input type="text" placeholder="900101" value={phoneDetails.birthday} onChange={e => setPhoneDetails({...phoneDetails, birthday: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>PHONE_NUMBER</label>
+                    <input type="text" placeholder="01012345678" value={phoneDetails.phone} onChange={e => setPhoneDetails({...phoneDetails, phone: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
+                  </div>
+                  <button type="submit" disabled={loginProgress} style={{ padding: '16px', background: 'var(--accent-brand)', color: '#000', borderRadius: '8px', fontWeight: 900, cursor: 'pointer', marginTop: '8px', border: 'none' }}>
+                    {loginProgress ? '인증 요청 중...' : '휴대폰 번호로 인증 시작'}
+                  </button>
+                </form>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+              <button 
+                onClick={() => setLoginMethod(loginMethod === 'qr' ? 'phone' : 'qr')}
+                style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                {loginMethod === 'qr' ? '휴대폰 번호로 변경' : 'QR 코드로 변경'}
+              </button>
+              <button 
+                onClick={handleManualLoginClick}
+                disabled={confirmingLogin}
+                style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                {confirmingLogin ? '요청 중...' : '강제 로그인 클릭'}
+              </button>
+            </div>
+
+            <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px' }}>CURRENT_STATUS [RELAXED_TIMEOUT: 10M]</div>
+              <div style={{ color: 'var(--accent-brand)', fontSize: '14px', fontWeight: 700 }}>{loginStatus}</div>
+            </div>
+
+            <button 
+              onClick={() => setRemoteLoginActive(false)}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+            >
+              CLOSE WINDOW
+            </button>
+          </motion.div>
+        </motion.div>
       )}
     </div>
   );

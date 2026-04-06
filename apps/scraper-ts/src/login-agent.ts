@@ -3,6 +3,11 @@
  * 사용자가 수동으로 인증을 완료하면 세션을 저장합니다.
  *
  * 사용법: npx tsx src/login-agent.ts
+ *
+ * - [x] Increase Login Timeout in `apps/scraper-ts/src/login-agent.ts` (5m -> 10m)
+ * - [x] Increase Session Timeout in `apps/api-ts/src/services/toss-login-service.ts`
+ * - [x] Improve Login UI Layout and Size in `apps/web-gui/src/components/RadarDashboard.tsx`
+ * - [x] Verify UI and Timeout changes manually (by inspection)
  */
 
 import { chromium, type BrowserContext } from "playwright";
@@ -26,7 +31,7 @@ async function waitForLogin(context: BrowserContext, options: LoginAgentOptions)
   const { onScreenshot } = options;
 
   logger.info(`토스증권 로그인 페이지로 이동합니다: ${TOSS_LOGIN_URL}`);
-  
+
   // 스크린샷 캡처 루프를 이동(goto) 전으로 옮겨서 로딩 중에도 화면을 볼 수 있게 합니다.
   let screenshotInterval: NodeJS.Timeout | null = null;
   if (onScreenshot) {
@@ -43,8 +48,8 @@ async function waitForLogin(context: BrowserContext, options: LoginAgentOptions)
   }
 
   try {
-    await page.goto(TOSS_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
-//...
+    await page.goto(TOSS_LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 120000 });
+    //...
     // 로그인 완료를 감지: URL 변경 또는 특정 요소 출현 대기
     await page.waitForURL(
       (url) => {
@@ -55,7 +60,7 @@ async function waitForLogin(context: BrowserContext, options: LoginAgentOptions)
           !path.includes("/auth")
         );
       },
-      { timeout: 300_000 } // 5분 대기
+      { timeout: 600_000 } // 10분 대기 (사용자 요청 반영: 기존 5분에서 연장)
     );
     logger.info("✅ 로그인 성공이 감지되었습니다.");
     return true;
@@ -74,7 +79,7 @@ async function waitForLogin(context: BrowserContext, options: LoginAgentOptions)
       return true;
     }
 
-    logger.warn("⏰ 로그인 대기 시간(5분)이 초과되었습니다.");
+    logger.warn("⏰ 로그인 대기 시간(10분)이 초과되었습니다.");
     return false;
   } finally {
     if (screenshotInterval) clearInterval(screenshotInterval);
@@ -84,7 +89,7 @@ async function waitForLogin(context: BrowserContext, options: LoginAgentOptions)
 export async function runLoginAgent(options: LoginAgentOptions = {}): Promise<void> {
   const { accountName = "default", headless = false } = options;
   const sessionManager = new SessionManager();
-  
+
   const browser = await chromium.launch({
     headless: headless,
     slowMo: 100,
@@ -108,11 +113,11 @@ export async function runLoginAgent(options: LoginAgentOptions = {}): Promise<vo
         try {
           localStorage = await pages[0].evaluate(() => {
             const items: Record<string, string> = {};
-            const win = window as any;
-            for (let i = 0; i < win.localStorage.length; i++) {
-              const key = win.localStorage.key(i);
+            const storage = (globalThis as any).localStorage;
+            for (let i = 0; i < storage.length; i++) {
+              const key = storage.key(i);
               if (key) {
-                items[key] = win.localStorage.getItem(key) || "";
+                items[key] = storage.getItem(key) || "";
               }
             }
             return items;

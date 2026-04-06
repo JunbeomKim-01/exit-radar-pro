@@ -125,7 +125,25 @@ export async function sentimentRoutes(app: FastifyInstance) {
       });
     }
 
-    // 최근 게시글 15개 조회 (대소문자 구분 없이)
+    // 1. 캐시 확인 (1시간 이내)
+    const cached = await prisma.sentimentInsight.findUnique({
+      where: { ticker }
+    });
+
+    const CACHE_TTL = 60 * 60 * 1000; // 1시간
+    if (cached && (Date.now() - cached.computedAt.getTime() < CACHE_TTL)) {
+      return reply.send({
+        success: true,
+        data: {
+          summary: cached.summary,
+          alert_level: cached.alertLevel,
+          key_points: JSON.parse(cached.keyPoints || "[]"),
+          cached: true
+        }
+      });
+    }
+
+    // 2. 캐시 없거나 만료됨 -> 최신 게시글 15개 조회
     const posts = await prisma.post.findMany({
       where: { 
         ticker: {
@@ -149,8 +167,28 @@ export async function sentimentRoutes(app: FastifyInstance) {
       });
     }
 
-    // AI 요약 생성
+    // 3. AI 요약 생성 (LLM 호출)
     const insight = await summarizePosts(ticker, posts);
+
+    if (insight) {
+      // 4. 결과 캐싱 (Upsert)
+      await prisma.sentimentInsight.upsert({
+        where: { ticker },
+        create: {
+          ticker,
+          summary: insight.summary,
+          alertLevel: insight.alert_level,
+          keyPoints: JSON.stringify(insight.key_points),
+          computedAt: new Date(),
+        },
+        update: {
+          summary: insight.summary,
+          alertLevel: insight.alert_level,
+          keyPoints: JSON.stringify(insight.key_points),
+          computedAt: new Date(),
+        }
+      });
+    }
 
     return reply.send({
       success: true,

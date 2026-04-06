@@ -27,8 +27,8 @@ async function fetchFredSeries(
 ): Promise<{ date: string; value: number }[]> {
   const apiKey = process.env.FRED_API_KEY;
   if (!apiKey) {
-    logger.warn(`FRED_API_KEY not set — using demo data for ${seriesId}`);
-    return generateDemoSeries(seriesId, limit);
+    logger.error(`FRED_API_KEY not set — Cannot fetch real data for ${seriesId}`);
+    throw new Error(`API_KEY_MISSING: FRED_API_KEY`);
   }
 
   try {
@@ -50,7 +50,7 @@ async function fetchFredSeries(
       .reverse();
   } catch (err) {
     logger.error(`FRED ${seriesId} fetch failed:`, err);
-    return generateDemoSeries(seriesId, limit);
+    return []; // Return empty instead of demo
   }
 }
 
@@ -72,8 +72,8 @@ async function fetchAVDaily(
   }
 
   if (!apiKey) {
-    logger.warn(`ALPHA_VANTAGE_API_KEY not set — demo data for ${symbol}`);
-    return generateDemoPriceSeries(symbol, limit);
+    logger.error(`ALPHA_VANTAGE_API_KEY not set — Cannot fetch ${symbol}`);
+    throw new Error(`API_KEY_MISSING: ALPHA_VANTAGE_API_KEY`);
   }
 
   try {
@@ -98,19 +98,15 @@ async function fetchAVDaily(
       .reverse();
 
     if (entries.length === 0) {
-      logger.warn(`AV returned empty for ${symbol} — using demo`);
-      const demoData = generateDemoPriceSeries(symbol, limit);
-      avCache.set(symbol, { timestamp: Date.now(), data: demoData });
-      return demoData;
+       logger.warn(`AV returned empty for ${symbol}. Check API Key or Symbol.`);
+       return [];
     }
 
     avCache.set(symbol, { timestamp: Date.now(), data: entries });
     return entries;
   } catch (err) {
     logger.error(`AV ${symbol} fetch failed:`, err);
-    const demoData = generateDemoPriceSeries(symbol, limit);
-    avCache.set(symbol, { timestamp: Date.now(), data: demoData });
-    return demoData;
+    return []; // No more demo data
   }
 }
 
@@ -149,7 +145,7 @@ export async function collectAllIndicators(days: number = 60): Promise<DailyIndi
   ]);
 
   // VXN — use FRED VXNCLS if available, else estimate from VIX
-  const vxnData = await fetchFredSeries("VXNCLS", days);
+  const vxnData = await fetchFredSeries("VXNCLS", days).catch(() => []);
 
   // Build date-indexed maps
   const nasdaqMap = new Map(nasdaq.map((r) => [r.date, r]));
@@ -205,51 +201,11 @@ export async function collectAllIndicators(days: number = 60): Promise<DailyIndi
     };
   });
 
+  if (rows.length === 0 || (rows.length > 0 && rows[rows.length - 1].nasdaqClose === 0)) {
+     logger.warn("핵심 데이터(NASDAQ)가 없어 분석을 수행할 수 없습니다.");
+     return [];
+  }
+
   logger.info(`시장 지표 수집 완료: ${rows.length}일`);
   return rows;
-}
-
-// ─── Demo Data Generators ───
-
-function generateDemoSeries(seriesId: string, days: number) {
-  const baseValues: Record<string, { base: number; volatility: number }> = {
-    VIXCLS: { base: 18, volatility: 5 },
-    VXNCLS: { base: 22, volatility: 6 },
-    BAMLH0A0HYM2: { base: 3.5, volatility: 0.5 },
-    DGS2: { base: 4.2, volatility: 0.3 },
-  };
-
-  const { base, volatility } = baseValues[seriesId] || { base: 50, volatility: 10 };
-  const now = new Date();
-  
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (days - i));
-    const trend = Math.sin(i / 15) * volatility * 0.5;
-    const noise = (Math.sin(i * 123.456) - 0.5) * volatility;
-    return {
-      date: d.toISOString().slice(0, 10),
-      value: Math.max(0, base + trend + noise),
-    };
-  });
-}
-
-function generateDemoPriceSeries(symbol: string, days: number) {
-  const bases: Record<string, number> = {
-    QQQ: 480, SOXX: 220, UUP: 27, USO: 75,
-  };
-  const base = bases[symbol] || 100;
-  const now = new Date();
-
-  return Array.from({ length: days }, (_, i) => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - (days - i));
-    const trend = Math.sin(i / 20) * base * 0.03;
-    const noise = (Math.sin(i * 987.654) - 0.5) * base * 0.02;
-    return {
-      date: d.toISOString().slice(0, 10),
-      close: base + trend + noise,
-      volume: Math.floor(Math.abs(Math.sin(i * 777)) * 50000000) + 10000000,
-    };
-  });
 }

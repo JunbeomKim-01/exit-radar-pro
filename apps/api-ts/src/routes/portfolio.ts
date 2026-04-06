@@ -1,19 +1,17 @@
 import { FastifyInstance } from "fastify";
 import path from "path";
+import { pathToFileURL } from "url";
 
 export async function portfolioRoutes(app: FastifyInstance) {
   app.get("/sync", async (request, reply) => {
     try {
       console.log(`[Portfolio Route] Current process.env.SESSION_DIR: ${process.env.SESSION_DIR}`);
-      // exec spawn ENOENT 에러 회피를 위해 스크래퍼 모듈을 직접 동적 임포트하여 함수 호출
-      // (scraper-ts 프로젝트 내의 모듈을 참조)
       const scraperPath = path.resolve(__dirname, "../../../scraper-ts/src/portfolio-scraper.ts");
+      const scraperUrl = pathToFileURL(scraperPath).href;
       
-      // Node.js 환경에서 ts 파일을 브릿징하여 import (tsx가 이미 전역 로더로 깔려있거나, 
-      // 이 파일 자체가 tsx로 런타임에 실행 중이므로 import가 가능합니다.)
       let fetchTossPortfolio;
       try {
-         const scraperModule = await import(scraperPath);
+         const scraperModule = await import(scraperUrl);
          fetchTossPortfolio = scraperModule.fetchTossPortfolio;
       } catch(e) {
          return reply.status(500).send({ success: false, error: "Scraper Module Import Error", message: String(e) });

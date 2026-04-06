@@ -1,3 +1,4 @@
+from __future__ import annotations
 """
 Toss Community Sentiment Classifier — FastAPI 서비스
 
@@ -13,7 +14,7 @@ import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 import uvicorn
 
 from classifier import SentimentClassifier
@@ -62,12 +63,12 @@ class ClassifyResponse(BaseModel):
 
 
 class BatchClassifyRequest(BaseModel):
-    items: list[ClassifyPostRequest]
+    items: List[ClassifyPostRequest]
     openai_api_key: Optional[str] = None
 
 
 class BatchClassifyResponse(BaseModel):
-    results: list[ClassifyResponse]
+    results: List[ClassifyResponse]
 
 
 class TickerExtractRequest(BaseModel):
@@ -75,19 +76,19 @@ class TickerExtractRequest(BaseModel):
 
 
 class TickerExtractResponse(BaseModel):
-    tickers: list[str]
+    tickers: List[str]
 
 
 class SummarizeRequest(BaseModel):
     ticker: str
-    posts: list[dict]
+    posts: List[dict]
     openai_api_key: Optional[str] = None
 
 
 class SummarizeResponse(BaseModel):
     summary: str
     alert_level: str  # "info" | "warning" | "danger"
-    key_points: list[str]
+    key_points: List[str]
 
 
 # ─── Endpoints ───
