@@ -18,7 +18,11 @@ export async function postRoutes(app: FastifyInstance) {
 
     const where: any = {};
 
-    if (ticker) where.ticker = ticker;
+    // Strict Ticker Filtering: ensures only posts for the selected ticker are returned
+    if (ticker && ticker.trim() !== '') {
+      where.ticker = ticker.trim().toUpperCase();
+    }
+    
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);

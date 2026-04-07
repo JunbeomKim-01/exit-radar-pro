@@ -191,6 +191,7 @@ model InsiderTrade {
 
   @@index([ticker])
   @@index([transactionDate])
+  @@unique([ticker, insiderName, transactionDate, shares, side, pricePerShare])
   @@map("insider_trades")
 }
 
@@ -205,7 +206,26 @@ model InstitutionHolding {
   fetchedAt       DateTime @default(now()) @map("fetched_at")
 
   @@index([ticker])
+  @@unique([ticker, institutionName, reportDate])
   @@map("institution_holdings")
+}
+
+model PoliticianTrade {
+  id              String   @id @default(cuid())
+  ticker          String
+  politicianName  String   @map("politician_name")
+  party           String   // D | R | I
+  chamber         String   // House | Senate
+  side            String   // BUY | SELL
+  amountRange     String   @map("amount_range")
+  transactionDate DateTime @map("transaction_date")
+  filingDate      DateTime @map("filing_date")
+  fetchedAt       DateTime @default(now()) @map("fetched_at")
+
+  @@index([ticker])
+  @@index([transactionDate])
+  @@unique([ticker, politicianName, transactionDate, side, amountRange])
+  @@map("politician_trades")
 }
 
 model Alert {
@@ -236,6 +256,7 @@ model MarketIndicatorBar {
   wtiClose    Float    @default(0)
   hyOas       Float    @default(0)
   dgs2        Float    @default(0)
+  yieldCurve  Float    @default(0)
   soxClose    Float    @default(0)
   sourceStatus String  @default("ok") // ok | partial | stale
   createdAt   DateTime @default(now()) @map("created_at")

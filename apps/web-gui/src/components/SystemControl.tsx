@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Activity, Cpu, Database, PlayCircle, Loader2 } from 'lucide-react';
+import { Activity, Cpu, Database, PlayCircle, Loader2, RefreshCw } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { SystemStatusResponse, CrawlJob, Stock } from '../api';
 import { startProcess, stopProcess, triggerCrawl, fetchCrawlJob } from '../api';
@@ -9,9 +9,10 @@ interface SystemControlProps {
   stock: Stock | null;
   onRefresh: () => void;
   hideStatus?: boolean;
+  isRefreshing?: boolean;
 }
 
-export function SystemControl({ status, stock, onRefresh, hideStatus }: SystemControlProps) {
+export function SystemControl({ status, stock, onRefresh, hideStatus, isRefreshing }: SystemControlProps) {
   const [activeJob, setActiveJob] = useState<CrawlJob | null>(null);
   const [maxCount, setMaxCount] = useState(40);
   const pollingRef = useRef<number | null>(null);
@@ -163,6 +164,19 @@ export function SystemControl({ status, stock, onRefresh, hideStatus }: SystemCo
           <StatusIndic name="database" label="DB" icon={Database} state={status?.database} />
         </div>
       )}
+      
+      <motion.button 
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        onClick={onRefresh}
+        disabled={isRefreshing}
+        style={{ 
+          background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center'
+        }}
+      >
+        <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+      </motion.button>
     </div>
   );
 }

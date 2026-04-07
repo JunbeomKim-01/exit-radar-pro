@@ -9,6 +9,7 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 import { SessionManager, type SessionData } from "./session-manager";
 import { createLogger } from "./logger";
 import * as crypto from "crypto";
+import * as path from "path";
 
 const logger = createLogger("scraper");
 
@@ -351,33 +352,55 @@ export class CommunityScraper {
    */
   private async clickLatestSortTab(page: Page): Promise<void> {
     try {
-      // 1. 현재 "인기순" 버튼 찾기 (최신 UI는 토글 버튼 형태)
-      const sortBtn = await page.$('button:has-text("인기순"), button:has-text("최신순")');
+      logger.info("정렬 상태 확인 및 '최신순' 전환 시도...");
+
+      // 1. 현재 정렬 버튼 찾기 (모바일/데스크탑 대응 강화)
+      const sortBtn = await page.waitForSelector('button:has-text("인기순"), button:has-text("최신순"), .j7y7c73 button', { timeout: 10000 }).catch(() => null);
       
       if (sortBtn) {
         const currentText = await sortBtn.textContent();
+        logger.info(`현재 정렬 상태: ${currentText?.trim()}`);
+
         if (currentText?.includes("인기순")) {
+          // 클릭하여 드롭다운 열기
           await sortBtn.click();
-          logger.info("✅ '인기순' 버튼 클릭하여 정렬 변경 시도");
-          await page.waitForTimeout(1000);
+          await page.waitForTimeout(1500);
+
+          // 2. 드롭다운에서 '최신순' 텍스트가 포함된 요소 찾기
+          const latestOption = await page.locator('li:has-text("최신순"), button:has-text("최신순"), [role="option"]:has-text("최신순"), span:has-text("최신순")').first();
           
-          // 드롭다운이나 토글 메뉴에서 "최신순" 선택
-          const latestOption = await page.$('li:has-text("최신순"), button:has-text("최신순"), [role="option"]:has-text("최신순")');
-          if (latestOption) {
+          if (await latestOption.isVisible()) {
             await latestOption.click();
-            logger.info("✅ 정렬 메뉴에서 '최신순' 선택 완료");
+            logger.info("✅ 정렬 메뉴에서 '최신순' 클릭 완료");
+            await page.waitForTimeout(3000); // 로딩 대기
           } else {
-             logger.info("ℹ️ 명시적 '최신순' 옵션 없음 - 토글되었을 가능성 확인");
+             // 드롭다운이 안 보이면 다른 방법 시도 (텍스트 직접 검색)
+             const textOptions = await page.getByText("최신순").all();
+             for (const opt of textOptions) {
+               if (await opt.isVisible()) {
+                 await opt.click();
+                 logger.info("✅ '최신순' 텍스트 직접 클릭 완료");
+                 break;
+               }
+             }
           }
-          await page.waitForTimeout(2000);
         } else {
-          logger.info("ℹ️ 이미 '최신순' 정렬 상태입니다.");
+          logger.info("ℹ️ 이미 '최신순' 정렬 상태인 것으로 보입니다.");
         }
       } else {
-        logger.info("ℹ️ 정렬 버튼을 찾지 못함 - 기본 피드 사용");
+        logger.warn("⚠️ 정렬 버튼을 페이지에서 찾을 수 없습니다. 기본 정렬로 계속합니다.");
+        
+        // 버튼을 못 찾았을 때의 폴백: '최신순'이라는 글자 자체가 있는 모든 요소를 클릭 시도
+        const fallbacks = await page.getByText("최신순").all();
+        if (fallbacks.length > 0) {
+           logger.info(`폴백: '최신순' 텍스트 요소 ${fallbacks.length}개 발견, 클릭 시도`);
+           for (const fb of fallbacks) {
+              try { await fb.click({ timeout: 2000 }); logger.info("폴백 클릭 성공"); break; } catch(e) {}
+           }
+        }
       }
     } catch (err) {
-      logger.warn("정렬 탭 변경 실패 (무시하고 계속 수집):", err);
+      logger.warn("정렬 탭 변경 과정 중 오류 (수집은 계속 시도):", err);
     }
   }
 
@@ -387,8 +410,12 @@ export class CommunityScraper {
   private groupByDate(posts: ScrapedPost[]): Record<string, number> {
     const groups: Record<string, number> = {};
     for (const post of posts) {
-      const dateKey = new Date(post.createdAt).toISOString().slice(0, 10); // YYYY-MM-DD
-      groups[dateKey] = (groups[dateKey] || 0) + 1;
+      try {
+        const dateKey = new Date(post.createdAt).toISOString().slice(0, 10); // YYYY-MM-DD
+        groups[dateKey] = (groups[dateKey] || 0) + 1;
+      } catch(e) {
+        groups["unknown"] = (groups["unknown"] || 0) + 1;
+      }
     }
     // 날짜 내림차순 정렬
     const sorted: Record<string, number> = {};
@@ -409,23 +436,31 @@ export class CommunityScraper {
   }
 }
 
-// 직접 실행 시
+// 직접 실행 시: npx tsx scraper.ts [ticker] [count] [accountName]
 if (require.main === module) {
-  require("dotenv").config({ path: "../../.env" });
+  require("dotenv").config({ path: path.join(__dirname, "../../../.env") });
 
   const ticker = process.argv[2] || "005930";
   const maxCount = parseInt(process.argv[3] || "20", 10);
+  const accountName = process.argv[4] || "default";
 
   const scraper = new CommunityScraper();
   const sessionManager = new SessionManager();
 
-  sessionManager.loadSession().then(async (session) => {
+  sessionManager.loadSession(accountName).then(async (session) => {
     if (!session) {
-      logger.error("저장된 세션이 없습니다. 먼저 로그인을 실행해 주세요: npm run login");
+      const available = sessionManager.listSessions();
+      logger.error(`세션 '${accountName}'이 없습니다. 사용 가능한 세션: ${available.join(", ")}`);
+      logger.error("먼저 로그인을 실행해 주세요: npm run login");
       process.exit(1);
     }
 
-    const posts = await scraper.scrapeViaDom(session, ticker, maxCount);
-    console.log(JSON.stringify(posts, null, 2));
+    try {
+      const posts = await scraper.scrapeViaDom(session, ticker, maxCount);
+      console.log(JSON.stringify(posts, null, 2));
+    } catch (err) {
+      logger.error("스크래핑 중 오류 발생:", err);
+      process.exit(1);
+    }
   });
 }

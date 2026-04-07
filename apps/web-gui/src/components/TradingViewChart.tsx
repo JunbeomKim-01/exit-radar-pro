@@ -33,6 +33,10 @@ function getTradingViewSymbol(ticker: string, companyName?: string): string {
     if (name.includes('아이온큐') || name.includes('ionq')) return 'NYSE:IONQ';
     if (name.includes('티브이씨') || name.includes('tqqq')) return 'NASDAQ:TQQQ';
     if (name.includes('에스오엑스엘') || name.includes('soxl')) return 'NYSE:SOXL';
+
+    // 매크로 지표 — 금리 커브 등
+    if (name.includes('금리 커브') || name.includes('yield curve')) return 'FRED:T10Y2Y';
+
     if (companyName && /^[A-Z]+$/.test(companyName)) return companyName; // 이름이 원래 심볼일 경우
   }
 

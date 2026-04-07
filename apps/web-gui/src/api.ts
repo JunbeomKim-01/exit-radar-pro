@@ -238,6 +238,16 @@ export async function triggerReversalRefresh() {
   return res.data.data;
 }
 
+export async function fetchIndicatorAnalysis(name: string) {
+  const res = await api.get<{ success: boolean; data: { analysis: string } }>(`/market/reversal/indicator-analysis?name=${name}`);
+  return res.data.data;
+}
+
+export async function fetchMarketUnifiedOpinion() {
+  const res = await api.get<{ success: boolean; data: { analysis: string } }>('/market/reversal/unified-opinion');
+  return res.data.data;
+}
+
 export async function confirmTossLogin() {
   const res = await api.post<{ success: boolean; message: string }>('/portfolio/confirm-login');
   return res.data;

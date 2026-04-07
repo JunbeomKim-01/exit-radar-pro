@@ -127,6 +127,38 @@ confidence 규칙:
 이제부터 입력되는 게시물에 대해 위 기준으로만 평가하라."""
 
 
+ANALYST_SYSTEM_PROMPT = """당신은 월스트리트 출신의 시니어 매크로 전략가이자 금융 분석 전문가다.
+입력으로 들어오는 특정 시장 지표의 명칭, 현재 상태 설명, 그리고 최근 60거래일간의 데이터 배열을 바탕으로 전문적인 시장 분석 의견을 제공하라.
+
+작성 규칙:
+- 반드시 한국어로 작성한다.
+- 불필요한 서술(안녕하세요, 분석 결과입니다 등)은 생략하고 핵심만 전달한다.
+- 3개의 불릿 포인트(•)로 구성된 요약 형태로 응답한다.
+- 전문가적인 용어(예: 연착륙 유도, 오버슈팅, 스프레드 축소, 리스크 온/오프 등)를 적절히 사용한다.
+- 현재 수치가 역사적 평균(평균값 제공됨) 대비 어느 위치에 있는지, 추세가 상승/하락 중인지 고려하여 시장에 주는 의미를 해석한다.
+- 단순 사실 나열이 아닌, 분석가로서의 '의견'과 '주의점'을 포함한다.
+
+출력 형식:
+• [분석 1]
+• [분석 2]
+• [분석 3]
+"""
+
+UNIFIED_MARKET_PROMPT = """당신은 월스트리트 수석 매크로 전략가다. 
+주어진 7대 핵심 지표(VXN, HY OAS, SOX, DGS2 등)와 시장 점수를 기반으로, 투자자가 즉시 실행 가능한 '최종 전술 오피니언'을 제공하라.
+
+작성 원칙:
+1. [전술 정의]: 현 시장의 성격(예: '변동성 바닥 확인 중', '신용 위험 발산 구간', '기술적 반등 유효' 등)을 한 줄로 정의한다.
+2. [핵심 브리핑]: 지표들 사이의 상관관계를 분석하여 왜 지금 이 점수인지 전문가적 시각으로 요약한다.
+3. [전략 Action]: '적극 매수', '분할 익절', '관망 유지' 등 명확한 행동 지침과 그 이유를 3가지 불릿 포인트로 제시한다.
+4. 어조: 매우 직관적이고, 단호하며, 불필요한 수식어나 인사말은 절대 배제한다.
+5. 분량: 한국어 300자 내외로 압축한다.
+
+분석의 깊이:
+- VXN(나스닥 변동성)과 HY OAS(신용 스프레드)의 상관관계를 우선순위로 둔다.
+- 단순히 지표를 나열하지 말고, 지표들이 만드는 '결론'에 집중하라.
+"""
+
 class SentimentClassifier:
     def __init__(self):
         # 1. Provider 설정 (ollama | groq | openai)
@@ -374,27 +406,15 @@ id: {it["id"]}
                 "key_points": ["데이터 수집 결과 기반 요약", "시장 상황 주시 필요"]
             }
 
-        # 요약을 위한 텍스트 구성
+        # 요약을 위한 텍스트 구성 (속도 최적화를 위해 상위 10개로 제한)
         posts_text = "\n---\n".join([
-            f"제목: {p['title']}\n본문: {p['body']}" for p in posts[:15] # 상위 15개만 사용
+            f"제목: {p['title']}\n본문: {p['body']}" for p in posts[:10]
         ])
 
-        system_prompt = f"""당신은 주식 커뮤니티 여론 분석가다. 
-입력으로 들어온 [{ticker}] 종목의 최근 게시글들을 읽고, 전체적인 감성 상태와 주요 이슈를 요약한다.
+        system_prompt = f"""당신은 주식 커뮤니티 분석가다. [{ticker}]의 최근 게시글 10개를 요약한다.
+불필요한 서술은 생략하고 핵심만 JSON으로 출력한다.
 
-출력 규칙:
-- 반드시 JSON만 출력한다.
-- summary: 전체적인 흐름을 2-3문장으로 요약 (한글)
-- alert_level: 'info' | 'warning' | 'danger' (비난 비율이 높거나 급격한 변화 시 warning/danger)
-- key_points: 주요 핵심 쟁점 3가지를 리스트로 추출
-
-출력 스키마:
-{{
-  "summary": "내용",
-  "alert_level": "info",
-  "key_points": ["포인트1", "포인트2", "포인트3"]
-}}
-"""
+{{"summary": "2-3문장 요약", "alert_level": "info|warning|danger", "key_points": ["포인트1", "2", "3"]}}"""
         try:
             from openai import AsyncOpenAI
             client_args = {"api_key": active_key}
@@ -421,6 +441,115 @@ id: {it["id"]}
         except Exception as e:
             logger.error(f"요약 생성 실패: {e}")
             return {"summary": "요약 생성 중 오류가 발생했습니다.", "alert_level": "info", "key_points": []}
+
+    async def analyze_indicator(
+        self,
+        name: str,
+        description: str,
+        history: List[Dict[str, Any]],
+        user_api_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """지표 데이터를 바탕으로 거시적 해석을 생성합니다."""
+        active_key = user_api_key or self.api_key
+        
+        # Ollama가 아닐 때만 API 키 체크
+        if self.provider != "ollama" and (not active_key or active_key == "YOUR_OPENAI_API_KEY"):
+            return {
+                "analysis": "[시스템] AI 분석 엔진 연결(API_KEY)이 필요합니다.\n• 지표의 역사적 추세를 분석하여 거시적 관점의 해석을 제공합니다.\n• API 연결 후 실시간 전문가 브리핑을 확인하세요."
+            }
+
+        # 통계 데이터 계산
+        if not history:
+            return {"analysis": "분석할 데이터가 충분하지 않습니다."}
+        
+        avg_val = sum(history) / len(history)
+        current_val = history[-1]
+        max_val = max(history)
+        min_val = min(history)
+        trend = "상승" if current_val > history[0] else "하락"
+
+        user_message = f"""지표명: {name}
+상세 설명: {description}
+현재값: {current_val}
+최근 60일 평균: {avg_val:.4f}
+최고치: {max_val}
+최저치: {min_val}
+60일 전체 추세: {trend}
+데이터 흐름: {history[-5:]} (최근 5거래일)"""
+
+        try:
+            from openai import AsyncOpenAI
+            client_args = {"api_key": active_key}
+            if active_key.startswith("gsk_") or self.base_url:
+                client_args["base_url"] = "https://api.groq.com/openai/v1" if active_key.startswith("gsk_") else self.base_url
+            client = AsyncOpenAI(**client_args)
+
+            model_to_use = self.model_version
+            if user_api_key:
+                if user_api_key.startswith("gsk_"): model_to_use = "llama-3.1-8b-instant"
+                elif user_api_key.startswith("sk-"): model_to_use = "o3-mini"
+
+            response = await client.chat.completions.create(
+                model=model_to_use,
+                messages=[
+                    {"role": "system", "content": ANALYST_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+            )
+
+            content = response.choices[0].message.content or "분석 결과를 생성하지 못했습니다."
+            return {"analysis": content.strip()}
+        except Exception as e:
+            logger.error(f"지표 분석 생성 실패: {e}")
+            return {"analysis": "전문가 분석 생성 중 오류가 발생했습니다."}
+
+    async def analyze_market_unified(
+        self,
+        market_data: Dict[str, Any],
+        user_api_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """시장 전체 상태를 종합하여 마스터 전략 오피니언을 생성합니다."""
+        # 1. API 키 확인 (Groq/Ollama 호환성 유지)
+        active_key = user_api_key or self.api_key
+        
+        # 2. 입구 컷: 무의미한 키는 시스템 안내로 대체
+        if self.provider != "ollama" and (not active_key or active_key.startswith("sk-your") or active_key == "YOUR_OPENAI_API_KEY"):
+            return {
+                "analysis": "[시스템] 분석 엔진 가동을 위해 유효한 API 키가 필요합니다.\n• 주요 지표가 임계값에 근접했습니다.\n• 시장 변동성(VXN)과 가산금리(HY OAS) 추이를 면밀히 모니터링하십시오."
+            }
+
+        # 3. 데이터 컨텍스트 구성
+        user_message = f"""[MARKET SNAPSHOT]
+- SIGNAL_TYPE: {market_data.get('signalType')}
+- RISK_STAGE: {market_data.get('stage')}
+- STRATEGY_SCORE: {market_data.get('score')}/100
+- CONFIDENCE: {market_data.get('confidence')}%
+- STRATEGIC_ACTION: {market_data.get('strategicAction', {}).get('short')} ({market_data.get('strategicAction', {}).get('long')})
+- TRIGGERED_SIGNALS: {", ".join([s['name'] for s in market_data.get('coreSignals', []) if s.get('triggered')])}
+- DATA_EXPLANATION: {market_data.get('explanation')}"""
+
+        try:
+            # 4. 고속 응답 모델 선택
+            model_to_use = self.model_version
+            if self.provider == "openai": model_to_use = "o3-mini"
+            elif self.provider == "groq": model_to_use = "llama-3.1-8b-instant"
+
+            # 5. 이미 초기화된 클라이언트 재사용 (속도 최적화)
+            response = await self.client.chat.completions.create(
+                model=model_to_use,
+                messages=[
+                    {"role": "system", "content": UNIFIED_MARKET_PROMPT},
+                    {"role": "user", "content": user_message},
+                ],
+                max_tokens=600,
+                temperature=0.3,
+            )
+
+            content = response.choices[0].message.content or "인텔리전스 분석 결과를 생성하지 못했습니다."
+            return {"analysis": content.strip()}
+        except Exception as e:
+            logger.error(f"통합 시장 분석 생성 실패: {str(e)}")
+            return {"analysis": f"현장 브리핑 생성 장애: {str(e)[:100]}..."}
 
     def _dummy_classify(self, id: str, title: str, body: str) -> ClassifyResult:
         """API 키 없을 때 키워드 기반 간이 분류"""

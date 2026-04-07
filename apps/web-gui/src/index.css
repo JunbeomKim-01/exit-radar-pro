@@ -33,9 +33,10 @@
 html, body, #root {
   margin: 0;
   padding: 0;
-  height: 100vh;
-  width: 100%;
-  overflow: hidden; /* Lock viewport */
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden; /* Lock root viewport */
+  position: fixed; /* Prevent mobile bounce scroll issues */
   background-color: var(--bg-dark);
   color: var(--text-primary);
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
@@ -111,6 +112,7 @@ button:disabled {
 .terminal-content {
   flex: 1;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 12px;
 }
 
@@ -118,39 +120,78 @@ button:disabled {
 .high-density-row {
   display: grid;
   align-items: center;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
+  overflow: hidden;
 }
 
 .high-density-row:hover {
-  background: rgba(255, 255, 255, 0.05);
-  transform: translateX(4px);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .high-density-row.active {
-  background: rgba(252, 213, 53, 0.05);
-  border-left: 3px solid var(--accent-brand);
-  padding-left: 13px;
+  background: rgba(252, 213, 53, 0.06);
+  border-left: 4px solid var(--accent-brand);
+  padding-left: 12px;
+  box-shadow: inset 8px 0 20px -10px rgba(252, 213, 53, 0.2);
 }
 
-.high-density-row.active::after {
+.high-density-row.active::before {
   content: '';
   position: absolute;
-  right: 0;
+  left: 0;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: linear-gradient(to bottom, transparent, var(--accent-brand), transparent);
+  width: 100%;
+  background: linear-gradient(90deg, rgba(252, 213, 53, 0.05) 0%, transparent 40%);
+  pointer-events: none;
+}
+
+.ticker-symbol {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+  transition: color 0.2s;
+}
+
+.active .ticker-symbol {
+  color: var(--accent-brand);
+}
+
+.ticker-name {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.price-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  text-align: right;
+}
+
+.price-change {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 /* Structural Layouts */
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
 }
 
 .top-bar {
@@ -173,6 +214,18 @@ button:disabled {
   min-height: 0;
 }
 
+/* --- Mobile-First Layout Overrides --- */
+@media (max-width: 1024px) {
+  .terminal-grid {
+    display: flex;
+    flex-direction: column;
+    grid-template-columns: 1fr;
+    gap: 0;
+    overflow-y: auto;
+    background: var(--bg-dark);
+  }
+}
+
 /* Signals & Tables */
 .terminal-table-row {
   display: grid;
@@ -184,11 +237,11 @@ button:disabled {
 /* Responsive (Mobile Fallback) */
 @media (max-width: 1024px) {
   html, body, #root {
-    height: 100vh;
+    height: 100dvh;
     overflow: hidden; /* Keep app shell locked */
   }
   .app-container {
-    height: 100vh;
+    height: 100dvh;
     padding-bottom: 60px; /* Space for mobile nav */
   }
   .terminal-grid {
@@ -204,6 +257,18 @@ button:disabled {
 
   .desktop-only {
     display: none !important;
+  }
+
+  .mobile-scroll-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+  
+  .mobile-scroll-container::-webkit-scrollbar {
+    display: none;
   }
 }
 
@@ -391,14 +456,20 @@ button:disabled {
   to { transform: rotate(360deg); }
 }
 
-/* --- SUB TABS --- */
-.detail-tabs {
+/* --- SUB TABS (Enhanced Mobile Scroll) --- */
+.detail-tabs, .source-tabs {
   display: flex;
   padding: 4px;
   background: rgba(0,0,0,0.2);
   border-radius: 8px;
   margin: 16px;
   gap: 4px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.detail-tabs::-webkit-scrollbar, .source-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab-btn {
@@ -474,12 +545,13 @@ button:disabled {
 }
 
 .trading-badge {
-  padding: 4px 8px;
+  padding: 2px 6px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
   min-width: 65px;
   text-align: center;
+  line-height: 1.4;
 }
 
 .trading-badge.up {
@@ -492,56 +564,7 @@ button:disabled {
   color: var(--binance-red);
 }
 
-.high-density-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgba(255,255,255,0.05);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.high-density-row:hover {
-  background: rgba(255,255,255,0.03);
-}
-
-.high-density-row .ticker-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.high-density-row .ticker-symbol {
-  font-size: 15px;
-  font-weight: 900;
-  color: var(--binance-text);
-}
-
-.high-density-row .ticker-name {
-  font-size: 11px;
-  color: var(--binance-gray);
-  font-weight: 600;
-}
-
-.high-density-row .price-info {
-  text-align: right;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.high-density-row .current-price {
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--binance-text);
-  font-family: 'JetBrains Mono', monospace;
-}
-
-.high-density-row .return-info {
-  font-size: 11px;
-  font-weight: 700;
-}
+/* Consolidated with base .high-density-row */
 
 .smart-sync-section {
   background: rgba(252, 213, 53, 0.05);
@@ -596,4 +619,21 @@ button:disabled {
 
 .mobile-list-safe-area {
   padding-bottom: 160px !important;
+}
+
+/* --- AI Shimmer Animation --- */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.05) 25%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.05) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }

@@ -76,9 +76,9 @@ async function fetchForm4Filings(cik: string, ticker: string): Promise<RawInside
 
   const trades: RawInsiderTrade[] = [];
 
-  // Form 4만 필터링 (최근 20건)
+  // Form 4 (및 4/A 정정공시) 필터링 (최근 20건)
   const form4Indices = forms
-    .map((f: string, i: number) => (f === "4" ? i : -1))
+    .map((f: string, i: number) => (f === "4" || f === "4/A" ? i : -1))
     .filter((i: number) => i >= 0)
     .slice(0, 20);
 
@@ -256,7 +256,7 @@ export function resolveUnderlyingTicker(ticker: string): string {
 
 /**
  * 메인 함수: 내부자 거래 데이터 수집
- * 1차: SEC Submissions API → 2차: EFTS
+ * 1차: SECForm4 Scraper (Web) → 2차: SEC Submissions API → 3차: EFTS
  */
 export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrade[]> {
   const actualTicker = resolveUnderlyingTicker(ticker);
@@ -265,7 +265,42 @@ export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrad
     logger.info(`${ticker} (ETF) -> ${actualTicker} (Underlying) 데이터 조회 시도`);
   }
 
-  // 1차: CIK 기반 Submissions API
+  // 국내 주식(숫자 티커 또는 A로 시작)은 SEC 조회 건너뜀
+  if (/^[A-Z]?\d{6}$/.test(actualTicker)) {
+    logger.info(`${actualTicker}: 국내 주식은 SEC 공시 대상이 아님 — 건너뜀`);
+    return [];
+  }
+
+  // 1차: SECForm4 Scraper (사용자의 요청에 따라 최우선)
+  try {
+    const { SECForm4Scraper } = await import("./scrapers/secform4-scraper");
+    const scraper = new SECForm4Scraper();
+    const scraped = await scraper.fetchTrades(actualTicker);
+    
+    if (scraped.length > 0) {
+      logger.info(`${actualTicker}: SECForm4 스크레이퍼로 ${scraped.length}건 데이터 수집 완료`);
+      
+      return scraped.map((t: any) => {
+        // Remove commas and currency signs before parsing
+        const shares = parseInt(t.sharesTraded.replace(/,/g, "") || "0");
+        const price = parseFloat(t.averagePrice.replace(/[$,]/g, "") || "0");
+        
+        return {
+          insiderName: t.insiderName,
+          role: t.insiderTitle,
+          side: t.side,
+          shares: isNaN(shares) ? 0 : shares,
+          pricePerShare: isNaN(price) ? 0 : price,
+          transactionDate: t.transactionDate,
+          filingDate: t.transactionDate, // Detailed filing date fallback
+        };
+      });
+    }
+  } catch (err) {
+    logger.warn(`SECForm4 스크레이퍼 실패 (${actualTicker}): ${err}`);
+  }
+
+  // 2차: SEC Submissions API (기존 방식)
   try {
     const cik = await tickerToCik(actualTicker);
     if (cik) {
@@ -279,7 +314,7 @@ export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrad
     logger.warn(`SEC Submissions API 실패 (${actualTicker}): ${err}`);
   }
 
-  // 2차: EFTS 전문 검색
+  // 3차: EFTS 전문 검색
   try {
     const trades = await fetchViaEfts(actualTicker);
     if (trades.length > 0) {
@@ -290,8 +325,7 @@ export async function fetchInsiderTrades(ticker: string): Promise<RawInsiderTrad
     logger.warn(`SEC EFTS 실패 (${actualTicker}): ${err}`);
   }
 
-  // 더미 데이터 폴백 제거
-  logger.info(`${actualTicker}: SEC API 모두 실패 — 리턴 빈 배열`);
+  logger.info(`${actualTicker}: 모든 수집 경로 실패 — 리턴 빈 배열`);
   return [];
 }
 
@@ -356,21 +390,109 @@ export async function fetchInstitutionHoldings(ticker: string): Promise<RawInsti
       return [];
     }
 
-    const holdings: RawInstitutionHolding[] = filings.slice(0, 10).map((filing: any, i: number) => {
-      const src = filing._source || {};
-      return {
-        institutionName: src.display_names?.[0] || `Institution ${i + 1}`,
-        shares: Math.floor(Math.random() * 5000000) + 100000,
-        changeShares: Math.floor(Math.random() * 200000) - 100000,
-        changePercent: Math.round((Math.random() * 40 - 20) * 100) / 100,
-        reportDate: src.file_date || today(),
-      };
-    });
+    const holdings: RawInstitutionHolding[] = [];
 
-    logger.info(`${actualTicker}: ${holdings.length}건 기관 보유 데이터 조회 완료`);
+    // Process top 5 filings to avoid heavy load (SEC rate limit is 10/s)
+    for (const filing of filings.slice(0, 5)) {
+      const src = filing._source || {};
+      const adsh = src.adsh; // Accession number
+      const cik = src.cik;
+      const institutionName = src.display_names?.[0] || "Unknown Institution";
+      const reportDate = src.file_date || today();
+
+      if (!adsh || !cik) continue;
+
+      try {
+        const accession = adsh.replace(/-/g, "");
+        // 13F-HR folders usually contain an XML table named 'infotable.xml' or similar
+        // We first get the file listing or guess the common name
+        const folderUrl = `https://www.sec.gov/Archives/edgar/data/${parseInt(cik)}/${accession}/`;
+        
+        // Search for the specific entry in the information table
+        // This is a simplified approach: we look for the ticker string in the XML
+        // Ideally we'd parse the full XML, but for performance we'll use a targeted fetch if possible
+        // or fetch the full table if it's not too large.
+        
+        // Let's try to find 'infotable.xml' or 'informationtable.xml'
+        const tableUrl = `${folderUrl}informationtable.xml`; 
+        const tableRes = await axios.get(tableUrl, {
+          headers: SEC_HEADERS,
+          timeout: 8000,
+          responseType: "text",
+        }).catch(() => null);
+
+        if (tableRes && tableRes.data) {
+          const shares = parse13FShares(tableRes.data, actualTicker);
+          if (shares > 0) {
+            holdings.push({
+              institutionName,
+              shares,
+              changeShares: 0, // Need previous quarter for this, defaulting to 0 for now
+              changePercent: 0,
+              reportDate,
+            });
+          }
+        }
+      } catch (err) {
+        logger.warn(`13F parse failed for ${institutionName}: ${err}`);
+      }
+      
+      await sleep(150); // SEC Rate limit friendly
+    }
+
+    if (holdings.length === 0) {
+       // If XML parsing fails, fallback to search result metadata if available, 
+       // but don't use random numbers anymore.
+       logger.info(`${actualTicker}: 실제 데이터 파싱 결과 합계 0 — 빈 배열 반환`);
+    }
+
+    logger.info(`${actualTicker}: ${holdings.length}건 실데이터 추출 완료`);
     return holdings;
   } catch (err) {
     logger.warn(`SEC 기관 보유 조회 실패 (${actualTicker}) — 리턴 빈 배열`);
     return [];
   }
+}
+
+/**
+ * 13F-HR 정보 테이블 XML에서 특정 티커의 보유 수량을 추출합니다.
+ */
+function parse13FShares(xml: string, ticker: string): number {
+  // 13F XML structure: <infoTable> <nameOfIssuer>APPLE INC</nameOfIssuer> <sshPrnamt>12345</sshPrnamt> ...
+  // We use a regex to find the block containing the ticker name
+  // Note: 13F uses full names, so we might need fuzzy matching or CUSIP
+  // For now, we'll look for blocks that might contain the ticker name
+  
+  const blocks = xml.match(/<infoTable>[\s\S]*?<\/infoTable>/gi) || [];
+  const tickerUpper = ticker.toUpperCase();
+
+  for (const block of blocks) {
+    const issuer = (block.match(/<nameOfIssuer>(.*?)<\/nameOfIssuer>/i)?.[1] || "").toUpperCase();
+    
+    // Heuristic: Check if issuer name contains ticker or is a known match
+    // Real-world would use CUSIP, but name matching is a decent fallback
+    if (issuer.includes(tickerUpper) || isNameMatch(issuer, tickerUpper)) {
+      const sharesMatch = block.match(/<sshPrnamt>(\d+)<\/sshPrnamt>/i);
+      if (sharesMatch) {
+         return parseInt(sharesMatch[1], 10);
+      }
+    }
+  }
+  return 0;
+}
+
+function isNameMatch(issuer: string, ticker: string): boolean {
+  // Common mappings for major tickers
+  const mappings: Record<string, string[]> = {
+    "AAPL": ["APPLE"],
+    "TSLA": ["TESLA"],
+    "NVDA": ["NVIDIA"],
+    "MSFT": ["MICROSOFT"],
+    "GOOGL": ["ALPHABET", "GOOGLE"],
+    "AMZN": ["AMAZON"],
+    "META": ["META PLATFORMS", "FACEBOOK"],
+  };
+  
+  const aliases = mappings[ticker] || [];
+  return aliases.some(alias => issuer.includes(alias));
 }

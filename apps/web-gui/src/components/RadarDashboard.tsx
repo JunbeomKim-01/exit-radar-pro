@@ -1,651 +1,768 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Shield, AlertTriangle, Trash2, RefreshCw, MessageSquare, Activity, Wallet, TrendingUp, BarChart2
+import { 
+  Activity, RefreshCw,
+  User, Globe,
+  Briefcase, ArrowUpRight,
+  CheckCircle2, Sparkles, Eye
 } from 'lucide-react';
-import { StockSearch } from './StockSearch';
-import { TradingViewChart } from './TradingViewChart';
+import { RadarAPI } from '../radar-api';
 import { SentimentInsight } from './SentimentInsight';
-import { SentimentRatio } from './SentimentRatio';
 import { SentimentTimeline } from './SentimentTimeline';
+import { SentimentRatio } from './SentimentRatio';
 import { PostList } from './PostList';
-import { SystemControl } from './SystemControl';
+import { TradingViewChart } from './TradingViewChart';
+import { SyncOverlay } from './SyncOverlay';
 import { TrendReversalTab } from './TrendReversalTab';
-import {
-  fetchSentimentRatio, fetchSentimentTimeline, fetchRecentPosts, fetchSentimentInsight,
-  fetchSystemStatus, fetchMyPortfolio, startTossLogin, startTossPhoneLogin, getTossLoginStatus, confirmTossLogin, 
-  fetchReversalSummary, fetchReversalDetails, triggerCrawl, fetchCrawlJob,
-  type SystemStatusResponse, type PortfolioData,
-  type SentimentRatioResponse, type SentimentTimelineResponse, type PostsResponse,
-  type SentimentInsight as SentimentInsightType
-} from '../api';
-import {
-  fetchWatchlist, addToWatchlist, removeFromWatchlist,
-  fetchTickerSummary, fetchTickerSignals, fetchTickerInsiders,
-  fetchTickerInstitutions,
-  type WatchlistItem, type RiskSnapshot, type RiskFactor,
-  type InsiderTrade, type InstitutionHolding
-} from '../radar-api';
 
-const MARKET_INDICATOR_INFO: Record<string, string> = {
-  'VXN': '나스닥 100 변동성 지수 (시장 불안정성)',
-  'VIX': 'S&P 500 공포 지수 (하락장 위험 신호)',
-  'DXY': '미국 달러 인덱스 (달러 가치 및 유동성)',
-  'WTI': '서부 텍사스산 원유 (에너지 물가 및 경기 반영)',
-  'SOX': '필라델피아 반도체 지수 (빅테크 전방 산업)',
-  'HY OAS': '하이일드 채권 스프레드 (기업 신용 및 부도 위험)',
-  'DGS2': '미 국채 2년물 금리 (통화 정책 및 경기 전망)',
-  '거래량': '시장 거래대금 및 활동성 (신뢰도 지표)'
-};
+const ShimmerLine = () => (
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px' }}>
+    <div className="shimmer" style={{ height: '12px', width: '80%', borderRadius: '4px' }} />
+    <div className="shimmer" style={{ height: '10px', width: '60%', borderRadius: '4px' }} />
+  </div>
+);
 
-const safeFetch = async <T,>(promise: Promise<T>, fallback: T): Promise<T> => {
-  try { return await promise; } catch (e) { return fallback; }
-};
+const Toast = ({ message, onClose }: { message: string, onClose: () => void }) => (
+  <motion.div initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} style={{ position: 'fixed', bottom: '24px', right: '24px', background: 'rgba(20,184,166,0.15)', border: '1px solid var(--accent-brand)', padding: '16px 24px', borderRadius: '12px', backdropFilter: 'blur(10px)', color: 'var(--accent-brand)', display: 'flex', alignItems: 'center', gap: '12px', zIndex: 100000, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', fontWeight: 900 }}>
+    <CheckCircle2 size={20} />
+    {message}
+    <button onClick={onClose} style={{ marginLeft: '12px', background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}>✕</button>
+  </motion.div>
+);
 
-function StageBadge({ stage }: { stage: string }) {
-  const config: Record<string, { bg: string; color: string; icon: any; label: string }> = {
-    OBSERVE: { bg: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', icon: Activity, label: 'OBSERVE' },
-    WARN: { bg: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24', icon: AlertTriangle, label: 'WARN' },
-    CONFIRMED: { bg: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', icon: Shield, label: 'CONFIRMED' },
-  };
-  const c = config[stage] || config.OBSERVE;
-  const Icon = c.icon;
-
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px',
-      background: c.bg, border: `1px solid ${c.color}33`, borderRadius: '6px',
-      padding: '4px 8px', fontSize: '10px', fontWeight: 800, color: c.color,
-    }}>
-      <Icon size={12} />
-      {c.label}
-    </div>
-  );
-}
-
-function ActionItem({ level, text }: { level: string; text: string }) {
-  const colors: Record<string, string> = {
-    CONFIRMED: '#ef4444', DANGER: '#ef4444',
-    WARN: '#fbbf24', OBSERVE: '#60a5fa',
-    INFO: 'var(--text-muted)', OK: 'var(--accent-up)',
-  };
-  const color = colors[level] || 'var(--text-muted)';
-  
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-      <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: color, marginTop: '6px', flexShrink: 0 }} />
-      <span>{text}</span>
-    </div>
-  );
-}
 
 export function RadarDashboard() {
-  const [mainTab, setMainTab] = useState<'radar' | 'reversal'>('reversal');
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
-  const [portfolioSortBy, setPortfolioSortBy] = useState<'return' | 'value'>('value');
-  const [portfolioSortOrder, setPortfolioSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [activeMarketInfo, setActiveMarketInfo] = useState<string | null>(null);
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  
-  const [detail, setDetail] = useState<RiskSnapshot | null>(null);
-  const [signals, setSignals] = useState<RiskFactor[]>([]);
-  const [insiders, setInsiders] = useState<InsiderTrade[]>([]);
-  const [institutions, setInstitutions] = useState<InstitutionHolding[]>([]);
-  
-  const [ratioData, setRatioData] = useState<SentimentRatioResponse | null>(null);
-  const [timelineData, setTimelineData] = useState<SentimentTimelineResponse | null>(null);
-  const [postsData, setPostsData] = useState<PostsResponse | null>(null);
-  const [insightData, setInsightData] = useState<SentimentInsightType | null>(null);
-  
-  const [systemStatus, setSystemStatus] = useState<SystemStatusResponse | null>(null);
-  
-  const [portfolio, setPortfolio] = useState<PortfolioData | null>(null);
-  const [portfolioSyncing, setPortfolioSyncing] = useState(false);
-  const [loginProgress, setLoginProgress] = useState(false);
-  const [remoteLoginActive, setRemoteLoginActive] = useState(false);
-  const [liveScreenshot, setLiveScreenshot] = useState<string | null>(null);
-  const [loginStatus, setLoginStatus] = useState<string>("pending");
-  const [loginMethod, setLoginMethod] = useState<'qr' | 'phone'>('phone');
-  const [phoneDetails, setPhoneDetails] = useState({ name: '', birthday: '', phone: '' });
-  const [rememberMe, setRememberMe] = useState(true);
-  const [confirmingLogin, setConfirmingLogin] = useState(false);
-  
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
-  const [mobileTab, setMobileTab] = useState<'market' | 'portfolio'>('market');
-  const [showMobileDetail, setShowMobileDetail] = useState(false);
-  const [detailSubTab, setDetailSubTab] = useState<'analysis' | 'supply' | 'social'>('analysis');
-
-  const [reversalSummary, setReversalSummary] = useState<any>(null);
-  const [reversalDetails, setReversalDetails] = useState<any>(null);
-
-  const [isScraping, setIsScraping] = useState(false);
-  const [scrapProgress, setScrapProgress] = useState("");
-  const [scrapCount, setScrapCount] = useState(20);
-  const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedTicker, setSelectedTicker] = useState<string | null>('AAPL');
+  const latestRequestTicker = useRef<string | null>(null);
+  const [insightData, setInsightData] = useState<any | null>(null);
+  const [timelineData, setTimelineData] = useState<any | null>(null);
+  const [ratioData, setRatioData] = useState<any | null>(null);
+  const [postsData, setPostsData] = useState<any | null>(null);
   const [sentimentLoading, setSentimentLoading] = useState(false);
-  const [marketContentTab, setMarketContentTab] = useState<'insiders' | 'institutions'>('insiders');
+  const [isFeedLoading, setIsFeedLoading] = useState(false);
+  const [isInsightLoading, setIsInsightLoading] = useState(false);
+  const [isSmartLoading, setIsSmartLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<'overview' | 'market' | 'portfolio' | 'radar'>('overview');
+  const [mobileTab, setMobileTab] = useState<'market' | 'portfolio' | 'ticker'>('market');
+  const [marketContentTab, setMarketContentTab] = useState<'insiders' | 'politicians' | 'institutions'>('insiders');
+  
+  const [insiderTrades, setInsiderTrades] = useState<any[]>([]);
+  const [institutions, setInstitutions] = useState<any[]>([]);
+  const [politicians, setPoliticians] = useState<any[]>([]);
+  const [portfolioData, setPortfolioData] = useState<any | null>(null);
+  const [radarFeed, setRadarFeed] = useState<any[]>([]);
+  
+  // Scraper Sync States
+  const [isScraping, setIsScraping] = useState(false);
+  const [portfolioSortKey, setPortfolioSortKey] = useState<'return' | 'valuation' | 'ticker'>('valuation');
+  const [tickerSubTab, setTickerSubTab] = useState<'chart' | 'insight' | 'smart' | 'feed'>('chart');
+  const [scrapProgress, setScrapProgress] = useState(0);
+  const [syncJobStatus, setSyncJobStatus] = useState<'pending' | 'running' | 'completed' | 'failed'>('pending');
+  const [syncPostCount, setSyncPostCount] = useState(0);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-  const currentTickerRef = useRef<string | null>(null);
-
-  const sortedWatchlist = [...watchlist].sort((a, b) => {
-    if (portfolioSortBy === 'return') {
-      const valA = a.returnRate || 0;
-      const valB = b.returnRate || 0;
-      return portfolioSortOrder === 'desc' ? valB - valA : valA - valB;
-    } else {
-      const valA = a.currentValue || 0;
-      const valB = b.currentValue || 0;
-      return portfolioSortOrder === 'desc' ? valB - valA : valA - valB;
-    }
-  });
-
-  const loadData = async () => {
-    const [w, revSum, revDet] = await Promise.all([
-      safeFetch(fetchWatchlist(), []),
-      safeFetch(fetchReversalSummary(), null),
-      safeFetch(fetchReversalDetails(), null)
-    ]);
-    setWatchlist(w as WatchlistItem[]);
-    setReversalSummary(revSum);
-    setReversalDetails(revDet);
-  };
-
-  useEffect(() => { 
-    loadData(); 
-    const saved = localStorage.getItem('toss-phone-details');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        setPhoneDetails(parsed);
-        setRememberMe(true);
-      } catch (e) {}
-    }
-    fetchSystemStatus().then(setSystemStatus).catch(console.error);
-    const interval = setInterval(async () => {
-      try { const s = await fetchSystemStatus(); setSystemStatus(s); }
-      catch { setSystemStatus(p => p ? { ...p, api: { status: 'offline', ping: 0 } } : null); }
-    }, 15000);
-    return () => clearInterval(interval);
-  }, []);
+  // TOSS Secure Auth States
+  const [remoteLoginActive, setRemoteLoginActive] = useState(false);
+  const [loginStatus, setLoginStatus] = useState('READY_FOR_HANDSHAKE');
+  const [loginProgress, setLoginProgress] = useState(false);
+  const [confirmingLogin, setConfirmingLogin] = useState(false);
+  const [phoneDetails, setPhoneDetails] = useState({ name: '', phone: '', birthday: '' });
+  const [showToast, setShowToast] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth <= 1024);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    fetchPortfolio();
+    fetchRadarFeed();
+    if (selectedTicker) {
+      handleSelectTicker(selectedTicker);
+    }
   }, []);
 
-  const handleAddTicker = async (stock: { code: string; name: string }) => {
-    try { await addToWatchlist(stock.code, stock.name); loadData(); } 
-    catch (err: any) { alert(err.response?.data?.error || '추가 실패'); }
-  };
-
-  const handleRemoveTicker = async (ticker: string) => {
-    if (confirm(`${ticker}를 삭제하시겠습니까?`)) {
-      await removeFromWatchlist(ticker);
-      loadData();
-    }
-  };
-
-  const handleSyncPortfolio = async () => {
-    setPortfolioSyncing(true);
+  const fetchPortfolio = async () => {
     try {
-      const p = await fetchMyPortfolio();
-      setPortfolio(p);
-      const newWatchlist: WatchlistItem[] = p.items.map((pi, idx) => ({
-        id: `portfolio-${pi.ticker}-${idx}`,
-        ticker: pi.ticker,
-        companyName: pi.name,
-        stock: { code: pi.ticker, name: pi.name, price: pi.currentPrice },
-        returnRate: pi.returnRate,
-        returnAmount: pi.returnAmount,
-        quantity: pi.quantity,
-        currentValue: (pi.quantity * pi.currentPrice)
-      } as unknown as WatchlistItem));
-      setWatchlist(newWatchlist);
-      // 포트폴리오 동기화 후 레이더 화면으로 자동 전환하지 않음 (사용자 선택 존중)
-      // if (p.items.length > 0) handleSelectTicker(p.items[0].ticker);
-    } catch(e: any) {
-      if (e.response?.status === 401) {
-        if (confirm("토스증권 세션이 만료되었습니다. 지금 로그인을 시도할까요?")) handleTossLogin();
-      } else alert("포트폴리오 동기화 중 오류가 발생했습니다.");
-    } finally { setPortfolioSyncing(false); }
-  };
-
-  const handleTossLogin = async () => {
-    setLoginProgress(true);
-    try { await startTossLogin(); setRemoteLoginActive(true); setLoginStatus("pending"); }
-    catch (e) { alert("로그인 에이전트 시작 중 오류가 발생했습니다."); }
-    finally { setLoginProgress(false); }
-  };
-
-  const handleTossPhoneLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginProgress(true);
-    if (rememberMe) localStorage.setItem('toss-phone-details', JSON.stringify(phoneDetails));
-    else localStorage.removeItem('toss-phone-details');
-    try { await startTossPhoneLogin(phoneDetails); setRemoteLoginActive(true); setLoginStatus("휴대폰 번호 로그인 시작됨..."); }
-    catch (e) { alert("휴대폰 번호 로그인 시작 중 오류가 발생했습니다."); }
-  };
-
-  useEffect(() => {
-    let interval: any;
-    if (remoteLoginActive) {
-      interval = setInterval(async () => {
-        try {
-          const status = await getTossLoginStatus();
-          setLoginStatus(status.status);
-          if (status.screenshot) setLiveScreenshot(status.screenshot);
-          if (status.status === 'success') {
-            setRemoteLoginActive(false);
-            alert("로그인 성공! 대시보드가 곧 동기화됩니다.");
-            handleSyncPortfolio();
-          } else if (status.status === 'failed' || status.status === 'timeout') {
-            setRemoteLoginActive(false);
-            alert(`로그인 실패: ${status.error || '시간 초과'}`);
-          }
-        } catch (e: any) {
-          if (e.response?.status === 404) { setRemoteLoginActive(false); setLoginStatus("세션 유실됨"); }
-        }
-      }, 1000);
+      const data = await RadarAPI.getPortfolio();
+      setPortfolioData(data);
+    } catch (err) {
+      console.error('Portfolio fetch error:', err);
     }
-    return () => clearInterval(interval);
-  }, [remoteLoginActive]);
+  };
 
-  const handleManualLoginClick = async () => {
-    setConfirmingLogin(true);
-    try { const res = await confirmTossLogin(); if (!res.success) alert(res.message); }
-    catch (e) { alert("오류 발생"); }
-    finally { setConfirmingLogin(false); }
+  const fetchRadarFeed = async () => {
+    try {
+      const data = await RadarAPI.getRadarFeed();
+      setRadarFeed(data);
+    } catch (err) {
+      console.error('Radar feed error:', err);
+    }
   };
 
   const handleSelectTicker = async (ticker: string) => {
-    currentTickerRef.current = ticker;
     setSelectedTicker(ticker);
-    setDetailLoading(true);
+    latestRequestTicker.current = ticker;
     setSentimentLoading(true);
-
-    // 1. 기존 데이터 즉시 초기화 (Stale State 방지)
-    setDetail(null);
-    setSignals([]);
-    setInsiders([]);
-    setInstitutions([]);
-    setRatioData(null);
-    setTimelineData(null);
+    
+    // Strict State Reset: prevent ghost data from previous tickers
     setPostsData(null);
     setInsightData(null);
-
-    // 모바일 경험 최적화: 클릭 즉시 화면을 띄우고 내부 데이터는 로딩 상태로 표시
-    if (isMobile) setShowMobileDetail(true);
-
-    const existing = watchlist.find(it => it.ticker === ticker);
-    // 즉각적인 피드백을 위해 최소한의 종목 정보만 우선 설정
-    setDetail({ 
-      ticker, 
-      companyName: existing?.stock?.name || existing?.companyName || 'LOADING...', 
-      score: 0, 
-      level: 'Analyzing' 
-    } as any);
-
-    // Phase 1: Essential Metadata (Chart, Signals, Flow) - FAST
-    const [summary, sigs, ins, inst] = await Promise.all([
-      safeFetch(fetchTickerSummary(ticker), null),
-      safeFetch(fetchTickerSignals(ticker), []),
-      safeFetch(fetchTickerInsiders(ticker), []),
-      safeFetch(fetchTickerInstitutions(ticker), [])
-    ]);
+    setTimelineData(null);
+    setRatioData(null);
+    setInsiderTrades([]);
+    setInstitutions([]);
+    setPoliticians([]);
     
-    // 레이스 컨디션 가드: 현재 선택된 티커와 일치할 때만 상태 업데이트
-    if (currentTickerRef.current !== ticker) return;
+    setMarketContentTab('insiders'); 
+    setSentimentLoading(true);
+    setIsFeedLoading(true);
+    setIsInsightLoading(true);
+    setIsSmartLoading(true);
 
-    if (summary) setDetail(summary as RiskSnapshot);
-    setSignals(sigs as RiskFactor[]);
-    setInsiders(ins as InsiderTrade[]);
-    setInstitutions(inst as InstitutionHolding[]);
-    setDetailLoading(false); // Essential data loaded!
-
-    // Phase 2: Heavy AI Data (Summaries, Ratios) - PROGRESSIVE LOADING
-    // 모든 데이터가 로드될 때까지 기다리지 않고, 도착하는 순서대로 화면에 업데이트 (체감 속도 개선)
-    safeFetch(fetchRecentPosts(ticker, 100), null).then(posts => {
-      if (currentTickerRef.current === ticker) setPostsData(posts as PostsResponse);
-    });
-    safeFetch(fetchSentimentRatio(ticker, '24h'), null).then(ratio => {
-      if (currentTickerRef.current === ticker) setRatioData(ratio as SentimentRatioResponse);
-    });
-    safeFetch(fetchSentimentTimeline(ticker, 7), null).then(timeline => {
-      if (currentTickerRef.current === ticker) setTimelineData(timeline as SentimentTimelineResponse);
-    });
-    safeFetch(fetchSentimentInsight(ticker), null).then(insight => {
-        if (currentTickerRef.current === ticker) {
-            setInsightData(insight as SentimentInsightType);
-            setSentimentLoading(false); // 최종 로딩 완료
+    // 1. Fetch Insight Data (Sentiment + Timeline + Ratio)
+    const fetchInsightGroup = async () => {
+      try {
+        const [insight, timeline, ratio] = await Promise.all([
+          RadarAPI.getSentimentInsight(ticker),
+          RadarAPI.getSentimentTimeline(ticker),
+          RadarAPI.getSentimentRatio(ticker)
+        ]);
+        if (latestRequestTicker.current === ticker) {
+          setInsightData(insight);
+          setTimelineData(timeline);
+          setRatioData(ratio);
         }
-    });
-  };
+      } finally {
+        if (latestRequestTicker.current === ticker) setIsInsightLoading(false);
+      }
+    };
 
-  const resolveUnderlyingTicker = (ticker: string) => {
-    const mapping: Record<string, string> = { "MSFU": "MSFT", "TSLL": "TSLA", "NVDU": "NVDA" };
-    return mapping[ticker.toUpperCase()] || ticker.toUpperCase();
+    // 2. Fetch Feed Data (Posts)
+    const fetchFeedGroup = async () => {
+      try {
+        const posts = await RadarAPI.getTickerPosts(ticker);
+        if (latestRequestTicker.current === ticker) setPostsData(posts);
+      } finally {
+        if (latestRequestTicker.current === ticker) setIsFeedLoading(false);
+      }
+    };
+
+    // 3. Fetch Smart Data (Insider + Inst + Pol)
+    const fetchSmartGroup = async () => {
+      try {
+        const [trades, inst, pol] = await Promise.all([
+          RadarAPI.getInsiderTrades(ticker),
+          RadarAPI.getInstitutionalHoldings(ticker),
+          RadarAPI.getPoliticianTrades(ticker)
+        ]);
+        if (latestRequestTicker.current === ticker) {
+          setInsiderTrades(trades);
+          setInstitutions(inst);
+          setPoliticians(pol);
+        }
+      } finally {
+        if (latestRequestTicker.current === ticker) setIsSmartLoading(false);
+      }
+    };
+
+    // Fire all groups in parallel - they will finish independently
+    fetchInsightGroup();
+    fetchFeedGroup();
+    fetchSmartGroup();
+
+    // Overall loading bar for the whole ticker view (as a general indicator)
+    Promise.allSettled([fetchInsightGroup(), fetchFeedGroup(), fetchSmartGroup()]).then(() => {
+      if (latestRequestTicker.current === ticker) setSentimentLoading(false);
+    });
   };
 
   const handleTriggerScrap = async () => {
     if (!selectedTicker) return;
     setIsScraping(true);
-    setScrapProgress("데이터 수집 시작...");
+    setSyncError(null);
+    setScrapProgress(0);
+    setSyncJobStatus('running');
+
     try {
-      const res = await triggerCrawl(selectedTicker, scrapCount);
-      const jobId = res.jobId;
-      let attempts = 0;
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        try {
-          const job = await fetchCrawlJob(jobId);
-          if (job.status === 'completed') {
-            clearInterval(pollInterval);
-            setScrapProgress(`수집 완료: ${job.postCount}건.`);
-            setTimeout(() => setIsScraping(false), 3000);
-            handleSelectTicker(selectedTicker);
-          } else if (job.status === 'failed') {
-            clearInterval(pollInterval);
-            alert(`실패: ${job.error}`);
-            setIsScraping(false);
-          } else setScrapProgress(`${attempts}s.. 수집 중`);
-        } catch (e) {}
-        if (attempts >= 60) { clearInterval(pollInterval); setIsScraping(false); }
-      }, 1000);
-    } catch (e) { setIsScraping(false); }
+      const result = await RadarAPI.triggerScrapJob(selectedTicker);
+      if (result && result.jobId) {
+        monitorScrapJob(result.jobId);
+      } else {
+        setSyncError('Failed to start scraping engine');
+        setSyncJobStatus('failed');
+      }
+    } catch (err) {
+      setSyncError('Network error during engine startup');
+      setSyncJobStatus('failed');
+    }
   };
 
-  const underlying = detail ? resolveUnderlyingTicker(detail.ticker) : "";
+  const monitorScrapJob = (jobId: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const result = await RadarAPI.getScrapJobStatus(jobId);
+        const currentStatus = (result.status === 'running') ? 'running' : result.status;
+        setSyncJobStatus(currentStatus);
+        const progress = result.status === 'completed' ? 100 : Math.min((result.postCount / 20) * 100, 95);
+        setScrapProgress(progress);
+        setSyncPostCount(result.postCount || 0);
 
-  const renderReturnBadge = (rate?: number) => {
-    if (rate === undefined) return null;
-    const isUp = rate >= 0;
-    return <div className={`trading-badge ${isUp ? 'up' : 'down'}`}>{isUp ? '+' : ''}{rate.toFixed(2)}%</div>;
+        if (currentStatus === 'completed') {
+          clearInterval(interval);
+          handleSelectTicker(selectedTicker || '');
+        } else if (currentStatus === 'failed') {
+          clearInterval(interval);
+          setSyncError(result.error || 'Scraping engine crashed');
+        }
+      } catch (err) {
+        clearInterval(interval);
+        setSyncError('Connection to monitoring engine lost');
+        setSyncJobStatus('failed');
+      }
+    }, 1500);
+  };
+
+  const handleTossPhoneLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginProgress(true);
+    setLoginStatus('CONNECTING_TO_AUTH_SERVER...');
+    try {
+      const res = await RadarAPI.tossAuthPhone(phoneDetails.name, phoneDetails.birthday, phoneDetails.phone);
+      if (res.success) {
+        setLoginStatus('WAITING_FOR_MOBILE_CONFIRMATION...');
+        setConfirmingLogin(true);
+      } else {
+        setLoginStatus('AUTH_REJECTED_BY_SERVER');
+        setTimeout(() => setLoginProgress(false), 2000);
+      }
+    } catch (err) {
+      setLoginStatus('HANDSHAKE_FAILED');
+      setTimeout(() => setLoginProgress(false), 2000);
+    }
+  };
+
+  const handleManualLoginClick = async () => {
+    setConfirmingLogin(true);
+    setLoginStatus('ESTABLISHING_HTTPS_TUNNEL...');
+    try {
+      const res = await RadarAPI.tossAuthManualClick();
+      if (res.success) {
+        setLoginStatus('REMOTE_AUTH_SESSION_ESTABLISHED');
+        setShowToast('포트폴리오 연동에 성공했습니다!');
+        setTimeout(() => {
+          setRemoteLoginActive(false);
+          setLoginProgress(false);
+          fetchPortfolio();
+        }, 2000);
+      } else {
+        setLoginStatus('AUTH_HEARTBEAT_TIMEOUT');
+        setTimeout(() => setConfirmingLogin(false), 2000);
+      }
+    } catch (err) {
+      setLoginStatus('REMOTE_PROTOCOL_ERROR');
+      setTimeout(() => setConfirmingLogin(false), 2000);
+    }
   };
 
   return (
-    <div className="app-container">
-      {isMobile && (
-        <div className="bottom-nav">
-          <motion.button className={`nav-item ${mobileTab === 'market' ? 'active' : ''}`} onClick={() => { setMobileTab('market'); setShowMobileDetail(false); }}><div className="icon-wrapper"><BarChart2 size={24} /></div><span>시장</span></motion.button>
-          <motion.button className={`nav-item ${mobileTab === 'portfolio' ? 'active' : ''}`} onClick={() => { setMobileTab('portfolio'); setShowMobileDetail(false); }}><div className="icon-wrapper"><Wallet size={24} /></div><span>포트폴리오</span></motion.button>
-          <motion.div className="nav-pill" style={{ width: '50%' }} animate={{ x: mobileTab === 'market' ? '0%' : '100%' }} />
+    <div className="terminal-container" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', background: 'var(--bg-dark)', overflow: 'hidden' }}>
+      
+      {/* ─── Top Utility Navigation Bar (Responsive Consistently) ─── */}
+      <nav className="terminal-nav" style={{ height: '56px', borderBottom: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(10px)', zIndex: 1000, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ width: '10px', height: '10px', background: 'var(--accent-brand)', borderRadius: '50%', boxShadow: '0 0 12px var(--accent-brand)' }} />
+          <h1 style={{ fontSize: '13px', fontWeight: 900, letterSpacing: '0.05em', color: '#fff', margin: 0 }}>
+            RADAR_PRO <span className="desktop-only" style={{ opacity: 0.4, fontWeight: 500 }}>V0.1.0</span>
+          </h1>
         </div>
-      )}
 
-      {!isMobile && (
-        <div style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-color)', padding: '0 16px', display: 'flex' }}>
-          <button onClick={() => setMainTab('reversal')} style={{ padding: '12px 20px', background: 'transparent', border: 'none', borderBottom: mainTab === 'reversal' ? '2px solid var(--accent-brand)' : 'transparent', color: mainTab === 'reversal' ? '#fff' : 'var(--text-muted)', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><TrendingUp size={16} /> TREND REVERSAL</button>
-          <button onClick={() => setMainTab('radar')} style={{ padding: '12px 20px', background: 'transparent', border: 'none', borderBottom: mainTab === 'radar' ? '2px solid var(--accent-brand)' : 'transparent', color: mainTab === 'radar' ? '#fff' : 'var(--text-muted)', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><Activity size={16} /> ENTITY RADAR</button>
+        {/* Desktop Main Tabs */}
+        <div className="desktop-only" style={{ display: 'flex', gap: '4px' }}>
+          {(['overview', 'market', 'portfolio', 'radar'] as const).map(tab => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={activeTab === tab ? 'active' : ''} style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', background: activeTab === tab ? 'rgba(255,255,255,0.05)' : 'transparent', color: activeTab === tab ? 'var(--accent-brand)' : 'var(--text-muted)', fontSize: '10px', fontWeight: 900, cursor: 'pointer', textTransform: 'uppercase' }}>
+              {tab}
+            </button>
+          ))}
         </div>
-      )}
 
-      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-        {mainTab === 'reversal' && !isMobile ? (
-          <TrendReversalTab />
-        ) : (
-          <div className="terminal-grid" style={{ height: '100%', position: 'relative' }}>
-            <AnimatePresence>
-              {isMobile ? (
-                showMobileDetail ? (
-                  <motion.div key={`mobile-detail-${selectedTicker}`} initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }} className="mobile-detail-overlay">
-                    <div className="detail-header">
-                       <button onClick={() => setShowMobileDetail(false)} className="back-btn"><TrendingUp size={20} style={{ transform: 'rotate(-90deg)' }} /> 뒤로</button>
-                       <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: '16px', fontWeight: 900 }}>{selectedTicker}</div>
-                          <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{detail?.companyName}</div>
-                       </div>
-                    </div>
-                    <div className="detail-scroll-area">
-                        <div style={{ padding: '0 16px 20px' }}>
-                           <div style={{ height: '300px', background: 'var(--bg-panel)', marginBottom: '16px' }}>
-                              <TradingViewChart ticker={underlying || selectedTicker || ''} companyName={detail?.companyName || ''} />
-                           </div>
-                           <div className="detail-tabs" style={{ marginBottom: '16px' }}>
-                              <button onClick={() => setDetailSubTab('analysis')} className={`tab-btn ${detailSubTab === 'analysis' ? 'active' : ''}`}>분석</button>
-                              <button onClick={() => setDetailSubTab('supply')} className={`tab-btn ${detailSubTab === 'supply' ? 'active' : ''}`}>수급</button>
-                              <button onClick={() => setDetailSubTab('social')} className={`tab-btn ${detailSubTab === 'social' ? 'active' : ''}`}>소셜</button>
-                           </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div className="nums desktop-only" style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{new Date().toLocaleTimeString()}</div>
+          <button className="desktop-only" onClick={() => setRemoteLoginActive(true)} style={{ width: '28px', height: '28px', background: 'rgba(255,255,255,0.05)', borderRadius: '50%', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={14} color={portfolioData ? 'var(--accent-brand)' : 'var(--text-muted)'} /></button>
+        </div>
+      </nav>
 
-                           {detailSubTab === 'analysis' && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                                 <div className="risk-badge" style={{ background: detail?.level === 'Critical' ? 'rgba(239,68,68,0.1)' : 'rgba(14,203,129,0.1)', color: detail?.level === 'Critical' ? 'var(--accent-down)' : 'var(--accent-up)' }}>RISK: {detail?.score}</div>
-                                 <SystemControl status={null} stock={null} onRefresh={() => handleSelectTicker(selectedTicker || '')} hideStatus />
-                              </div>
-                              <div className="mobile-section"><h3 className="section-title"><Shield size={14} /> 리스크 시그널</h3><div className="signal-list">{signals.length > 0 ? signals.map(s => <div key={s.id} className="signal-item"><span className="signal-title">{s.title}</span><p className="signal-desc">{s.description}</p></div>) : <div className="empty-detail">데이터 없음</div>}</div></div>
-                            </motion.div>
-                          )}
-
-                          {detailSubTab === 'supply' && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                              <div className="mobile-section">
-                                <h3 className="section-title"><Activity size={14} /> 내부자 거래</h3>
-                                <div className="data-table-container">
-                                  <table className="data-table">
-                                    <thead><tr><th>날짜</th><th>인사이드</th><th>타입</th><th>수량</th><th>금액</th></tr></thead>
-                                    <tbody>
-                                      {insiders.map((it, idx) => (
-                                        <tr key={idx}><td>{new Date(it.transactionDate).toLocaleDateString()}</td><td>{it.insiderName}</td><td className={it.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{it.side}</td><td className="nums">{it.shares.toLocaleString()}</td><td className="nums">${(it.shares * it.pricePerShare).toLocaleString()}</td></tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                              <div className="mobile-section">
-                                <h3 className="section-title"><Shield size={14} /> 기관 보유</h3>
-                                <div className="data-table-container">
-                                  <table className="data-table">
-                                    <thead><tr><th>기관</th><th>수량</th><th>변화</th></tr></thead>
-                                    <tbody>{institutions.map((ih, idx) => (<tr key={idx}><td>{ih.institutionName}</td><td className="nums">{ih.shares.toLocaleString()}</td><td className={ih.changePercent > 0 ? 'insider-buy' : 'insider-sell'}>{ih.changePercent.toFixed(2)}%</td></tr>))}</tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            </motion.div>
-                          )}
-
-                          {detailSubTab === 'social' && (
-                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                               <div className="mobile-section"><h3 className="section-title"><MessageSquare size={14} /> 커뮤니티 투심</h3>{(insightData || sentimentLoading) && <SentimentInsight insight={insightData} loading={sentimentLoading} />}</div>
-                               <div className="mobile-section" style={{ height: '240px' }}><h3 className="section-title"><Activity size={14} /> 감성 타임라인</h3>{timelineData && <SentimentTimeline timeline={timelineData.timeline} />}</div>
-                               <div style={{ marginTop: '20px' }}>{ratioData && <SentimentRatio {...ratioData} />}</div>
-                               <div className="smart-sync-section compact" style={{ margin: '16px 0', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                                     <div className="sync-status"><div className={isScraping ? "sync-dot pulse" : ""} style={{ background: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)', width: '6px', height: '6px', borderRadius: '50%' }} /><span style={{ fontSize: '11px', fontWeight: 800, color: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)' }}>{isScraping ? "SYNCING..." : "COMMUNITY SYNC"}</span></div>
-                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>LIMIT</span><input type="number" value={scrapCount} onChange={(e) => setScrapCount(Number(e.target.value))} style={{ width: '40px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', fontSize: '11px', textAlign: 'center' }}/></div>
-                                  </div>
-                                  <button onClick={handleTriggerScrap} disabled={isScraping} style={{ width: '100%', padding: '8px', background: 'var(--accent-brand)', color: '#000', borderRadius: '4px', fontSize: '11px', fontWeight: 900 }}>START SYNC</button>
-                               </div>
-                               <div style={{ borderTop: '1px solid var(--border-color)', padding: '16px 0' }}>
-                                 <h3 className="section-title"><MessageSquare size={14} /> 최신 게시글</h3>
-                                 <PostList posts={postsData?.posts || []} />
-                               </div>
-                            </motion.div>
-                          )}
-                        </div>
-                    </div>
-                  </motion.div>
-                ) : mobileTab === 'market' ? (
-                  <motion.div key="mobile-market" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflowY: 'auto', paddingBottom: '90px' }}>
-                    <div style={{ padding: '16px' }}>
-                       <div style={{ background: 'var(--bg-panel)', borderRadius: '12px', border: '1px solid var(--border-color)', padding: '16px', marginBottom: '16px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                             <div><div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}><span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>MARKET_STAGE</span>{reversalSummary && <StageBadge stage={reversalSummary.stage} />}</div><div style={{ fontSize: '20px', fontWeight: 900, color: reversalSummary?.signalType === 'TOP_CANDIDATE' ? '#ef4444' : 'var(--accent-up)' }}>{reversalSummary?.signalType === 'TOP_CANDIDATE' ? '하락 전환 위험' : '상승 전환 기회'}</div></div>
-                             <div style={{ textAlign: 'right' }}><span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, display: 'block', marginBottom: '4px' }}>SCORE</span><div style={{ fontSize: '24px', fontWeight: 900, color: '#fff' }}>{reversalSummary?.score || 0}</div></div>
-                          </div>
-                          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '10px', borderRadius: '6px', fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.4, border: '1px solid rgba(255,255,255,0.05)', marginBottom: '12px' }}>{reversalSummary?.explanation || "시장 데이터를 분석 중입니다..."}</div>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)' }}><span>SIGNAL_CONFIDENCE</span><span style={{ color: '#fff' }}>{(reversalSummary?.confidence || 0).toFixed(0)}%</span></div>
-                       </div>
-
-                       <h3 style={{ fontSize: '13px', fontWeight: 900, marginBottom: '12px', color: 'var(--text-active)' }}>시장 핵심 지표</h3>
-                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
-                          {['VXN', 'VIX', 'DXY', 'WTI', 'SOX', 'HY OAS', 'DGS2', '거래량'].map(name => {
-                            const sig = reversalDetails?.signal?.coreSignals?.find((s: any) => s.name.includes(name)) || reversalDetails?.signal?.supportSignals?.find((s: any) => s.name.includes(name));
-                            return (
-                               <div key={name} onClick={() => setActiveMarketInfo(activeMarketInfo === name ? null : name)} style={{ background: 'var(--bg-card)', padding: '12px', borderRadius: '12px', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
-                                 <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>{name}</span>
-                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}><span className="nums" style={{ fontSize: '16px', fontWeight: 900, color: sig?.triggered ? 'var(--accent-down)' : 'var(--text-active)' }}>{sig ? `${sig.score}/${sig.maxScore}` : '--'}</span>{sig?.triggered && <AlertTriangle size={12} color="#ef4444" />}</div>
-                                 <div style={{ height: '3px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden', marginTop: '4px' }}><div style={{ width: sig ? `${(sig.score/sig.maxScore)*100}%` : '0%', height: '100%', background: sig?.triggered ? 'var(--accent-down)' : 'var(--accent-brand)' }} /></div>
-                                 <AnimatePresence>{activeMarketInfo === name && (<motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '10px', textAlign: 'center', fontSize: '9px', fontWeight: 700, color: 'var(--accent-brand)', zIndex: 10 }}>{MARKET_INDICATOR_INFO[name] || sig?.description}</motion.div>)}</AnimatePresence>
-                               </div>
-                            );
-                          })}
-                       </div>
-                       <h3 style={{ fontSize: '13px', fontWeight: 900, marginBottom: '12px', color: 'var(--text-active)' }}>나스닥 지수 (QQQ)</h3>
-                       <div style={{ height: '320px', background: 'var(--bg-panel)', borderRadius: '12px', overflow: 'hidden' }}><TradingViewChart ticker="QQQ" companyName="Nasdaq 100 ETF" /></div>
-                    </div>
-                  </motion.div>
-                ) : (
-                  <motion.div key="mobile-portfolio" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="terminal-panel" style={{ border: 'none' }}>
-                    <div style={{ padding: '16px', background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-color)' }}>
-                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}><span style={{ fontWeight: 800 }}>내 자산</span><button onClick={handleSyncPortfolio} className="toss-sync-btn" disabled={portfolioSyncing}><RefreshCw size={12} className={portfolioSyncing ? 'animate-spin' : ''} /> Sync</button></div>
-                       {portfolio && (<div style={{ display: 'flex', alignItems: 'baseline', gap: '10px' }}><div style={{ fontSize: '28px', fontWeight: 900 }}>${portfolio.totalAssetValue.toLocaleString()}</div><div style={{ fontSize: '14px', fontWeight: 800, color: portfolio.totalReturnRate >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{portfolio.totalReturnRate >= 0 ? '+' : ''}{portfolio.totalReturnRate.toFixed(2)}%</div></div>)}
-                       <div style={{ marginTop: '16px' }}><StockSearch onSelect={(stock) => handleAddTicker({ code: stock.code, name: stock.name })} initialValue="" /></div>
-                    </div>
-                    <div className="terminal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>PORTFOLIO ASSETS</span><div style={{ display: 'flex', gap: '8px' }}><button onClick={() => { setPortfolioSortBy('return'); setPortfolioSortOrder(portfolioSortOrder === 'desc' ? 'asc' : 'desc'); }} style={{ fontSize: '10px', color: portfolioSortBy === 'return' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>수익률</button><button onClick={() => { setPortfolioSortBy('value'); setPortfolioSortOrder(portfolioSortOrder === 'desc' ? 'asc' : 'desc'); }} style={{ fontSize: '10px', color: portfolioSortBy === 'value' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>총액</button></div></div>
-                    <div className="terminal-content mobile-list-safe-area" style={{ padding: 0 }}>
-                        {sortedWatchlist.map(item => (
-                         <div key={item.id} className="high-density-row" onClick={() => handleSelectTicker(item.ticker)} style={{ gridTemplateColumns: '1fr 1fr 80px' }}>
-                            <div className="ticker-info"><span className="ticker-symbol">{item.ticker}</span><span className="ticker-name">{item.stock?.name || item.companyName || ''}</span></div>
-                            <div style={{ textAlign: 'right' }}><span style={{ fontSize: '13px', fontWeight: 800, color: '#fff' }}>${item.currentValue?.toLocaleString() || '--'}</span><span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{item.quantity?.toLocaleString() || '0'}주</span></div>
-                            <div className="price-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>{renderReturnBadge(item.returnRate)}<Trash2 size={14} onClick={(e) => { e.stopPropagation(); handleRemoveTicker(item.ticker); }} style={{ opacity: 0.3 }} /></div>
-                         </div>
-                       ))}
-                    </div>
-                  </motion.div>
-                )
-              ) : (
-                 <>
-                   <motion.aside key="desktop-left" initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ width: 'clamp(280px, 18vw, 320px)', flexShrink: 0, height: '100%' }}>
-                       <div style={{ padding: '20px 16px', borderBottom: '1px solid var(--border-color)', background: 'rgba(255,255,255,0.02)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}><span style={{ fontWeight: 800, fontSize: '11px', color: 'var(--text-muted)', letterSpacing: '0.05em' }}>NAVIGATOR / ASSETS</span><button onClick={handleSyncPortfolio} className="toss-sync-btn" disabled={portfolioSyncing}><RefreshCw size={10} className={portfolioSyncing ? 'animate-spin' : ''} /> REFRESH</button></div>
-                          {portfolio && (<div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}><div style={{ fontSize: '24px', fontWeight: 900, color: '#fff' }}>${portfolio.totalAssetValue.toLocaleString()}</div><div style={{ fontSize: '12px', fontWeight: 800, color: portfolio.totalReturnRate >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{portfolio.totalReturnRate >= 0 ? '▲' : '▼'} {Math.abs(portfolio.totalReturnRate).toFixed(2)}%</div></div>)}
-                       </div>
-                       <div className="terminal-header"><span>WATCHLIST INDICATORS</span><div style={{ display: 'flex', gap: '4px' }}><button onClick={() => { setPortfolioSortBy('return'); setPortfolioSortOrder(prev => prev === 'desc' ? 'asc' : 'desc'); }} style={{ fontSize: '9px', color: portfolioSortBy === 'return' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>%</button><button onClick={() => { setPortfolioSortBy('value'); setPortfolioSortOrder(prev => prev === 'desc' ? 'asc' : 'desc'); }} style={{ fontSize: '9px', color: portfolioSortBy === 'value' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>$</button></div></div>
-                       <div style={{ padding: '12px' }}><StockSearch onSelect={(stock) => handleAddTicker({ code: stock.code, name: stock.name })} initialValue="" /></div>
-                       <div className="terminal-content" style={{ padding: 0, paddingBottom: '140px' }}>
-                          {sortedWatchlist.map(item => (
-                            <div key={item.id} className={`high-density-row ${selectedTicker === item.ticker ? 'active' : ''}`} onClick={() => handleSelectTicker(item.ticker)} style={{ padding: '12px 16px', gridTemplateColumns: 'minmax(80px, 1.2fr) 1fr 1fr' }}>
-                              <div className="ticker-info"><span style={{ fontSize: '13px', fontWeight: 900, color: selectedTicker === item.ticker ? 'var(--accent-brand)' : '#fff' }}>{item.ticker}</span><span style={{ fontSize: '10px', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.stock?.name || item.companyName || ''}</span></div>
-                              <div style={{ textAlign: 'right' }}><span style={{ fontSize: '12px', fontWeight: 800, color: '#fff' }}>${item.currentValue?.toLocaleString() || '--'}</span><span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{item.quantity?.toLocaleString() || '0'} shares</span></div>
-                              <div className="price-info" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}><div style={{ fontSize: '11px', fontWeight: 800, color: (item.returnRate || 0) >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{(item.returnRate || 0) >= 0 ? '+' : ''}{(item.returnRate || 0).toFixed(2)}%</div><Trash2 size={12} onClick={(e) => { e.stopPropagation(); handleRemoveTicker(item.ticker); }} style={{ opacity: 0.3, cursor: 'pointer' }} /></div>
-                            </div>
-                          ))}
-                       </div>
-                   </motion.aside>
-
-                   <motion.main key={`desktop-main-${selectedTicker}`} initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg-panel)', height: '100%' }}>
-                      {!selectedTicker || !detail ? (
-                        <div className="empty-state" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontWeight: 800 }}>PENDING_TICKER_SELECTION</div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                           <div style={{ padding: '20px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}><div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><div style={{ width: '8px', height: '18px', background: 'var(--accent-brand)', borderRadius: '2px' }} /><span style={{ fontSize: '24px', fontWeight: 900, color: '#fff' }}>{detail.ticker}</span><span style={{ fontSize: '14px', color: 'var(--text-muted)' }}>/ {detail.companyName}</span></div></div>
-                              <div style={{ display: 'flex', gap: '32px', alignItems: 'center' }}><div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}><div style={{ textAlign: 'right' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>RISK_INTENSITY</div><div style={{ fontSize: '28px', fontWeight: 900, color: detail.level === 'Critical' ? 'var(--accent-down)' : 'var(--accent-up)' }}>{detail.score}<span style={{ fontSize: '12px', color: 'var(--text-muted)' }}> / 100</span></div></div><div style={{ height: '32px', width: '1px', background: 'var(--border-color)' }} /><SystemControl status={systemStatus} stock={null} onRefresh={() => handleSelectTicker(selectedTicker)} hideStatus /></div></div>
-                           </div>
-                           <div style={{ flex: 2, minHeight: '350px', background: 'var(--bg-dark)' }}><TradingViewChart ticker={detail.ticker} companyName={detail.companyName} /></div>
-                           <div className="terminal-grid" style={{ flex: 1.5, borderTop: '2px solid var(--border-color)', display: 'grid', gridTemplateColumns: 'minmax(300px, 1fr) minmax(350px, 1.2fr)', minHeight: '300px' }}>
-                              <div style={{ borderRight: '1px solid var(--border-color)', padding: '20px', overflowY: 'auto' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}><h3 className="section-title"><Shield size={14} /> RADAR_SIGNALS</h3></div><div className="signal-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>{signals.map(s => (<div key={s.id} className="signal-item" style={{ borderLeft: '2px solid var(--accent-brand)', paddingLeft: '12px' }}><span className="signal-title">{s.title}</span><p className="signal-desc">{s.description}</p></div>))}</div></div>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}><div style={{ display: 'flex', background: 'rgba(0,0,0,0.3)' }}><button onClick={() => setMarketContentTab('insiders')} style={{ flex: 1, padding: '12px', background: marketContentTab === 'insiders' ? 'rgba(255,255,255,0.05)' : 'transparent', color: marketContentTab === 'insiders' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900 }}>INSIDER_FLOW</button><button onClick={() => setMarketContentTab('institutions')} style={{ flex: 1, padding: '12px', background: marketContentTab === 'institutions' ? 'rgba(255,255,255,0.05)' : 'transparent', color: marketContentTab === 'institutions' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900 }}>INSTITUTION_METRICS</button></div><div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>{marketContentTab === 'insiders' ? (<div className="data-table-container"><table className="data-table high-density"><thead><tr><th>DATE</th><th>INSIDER</th><th>SIDE</th><th>VALUE</th></tr></thead><tbody>{insiders.map((it, idx) => (<tr key={idx}><td>{new Date(it.transactionDate).toLocaleDateString()}</td><td>{it.insiderName}</td><td className={it.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{it.side}</td><td>${(it.shares * it.pricePerShare).toLocaleString()}</td></tr>))}</tbody></table></div>) : (<div className="data-table-container"><table className="data-table high-density"><thead><tr><th>INSTITUTION</th><th>SHARES</th><th>DELTA</th></tr></thead><tbody>{institutions.map((ih, idx) => (<tr key={idx}><td>{ih.institutionName}</td><td>{ih.shares.toLocaleString()}</td><td className={ih.changePercent > 0 ? 'insider-buy' : 'insider-sell'}>{ih.changePercent.toFixed(2)}%</td></tr>))}</tbody></table></div>)}</div></div>
-                           </div>
-                        </div>
-                      )}
-                   </motion.main>
-
-                   <motion.aside key={`desktop-right-${selectedTicker}`} initial={false} animate={{ opacity: 1 }} className="terminal-panel" style={{ width: 'clamp(350px, 22vw, 400px)', flexShrink: 0, height: '100%' }}>
-                      <div className="terminal-header"><span>SOCIAL_SENTIMENT_CORE</span></div>
-                      <div className="terminal-content" style={{ padding: 0, overflowY: 'auto' }}>
-                         {(insightData || sentimentLoading) && <div style={{ padding: '20px 16px' }}><SentimentInsight insight={insightData} loading={sentimentLoading} /></div>}
-                         <div style={{ height: '240px', padding: '0 16px', marginBottom: '16px' }}>{timelineData && <SentimentTimeline timeline={timelineData.timeline} />}</div>
-                          <div className="smart-sync-section" style={{ margin: '16px', padding: '16px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
-                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}><div className="sync-status"><div className={isScraping ? "sync-dot pulse" : ""} style={{ background: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)', width: '6px', height: '6px', borderRadius: '50%' }} /><span style={{ fontSize: '11px', fontWeight: 900, color: isScraping ? 'var(--accent-brand)' : 'var(--text-muted)' }}>{isScraping ? "SCRAPING_ENGINE_ACTIVE" : "ENGINE_IDLE"}</span></div></div>
-                             <button onClick={handleTriggerScrap} disabled={isScraping} style={{ width: '100%', padding: '12px', background: 'var(--accent-brand)', color: '#000', borderRadius: '6px', fontWeight: 900 }}><Activity size={16} /> START SYNC</button>
-                          </div>
-                         <div style={{ padding: '0 16px 20px' }}>{ratioData && <SentimentRatio {...ratioData} />}</div>
-                         <div style={{ borderTop: '1px solid var(--border-color)', padding: '16px' }}><PostList posts={postsData?.posts || []} /></div>
-                      </div>
-                   </motion.aside>
-                 </>
-               )}
-             </AnimatePresence>
-          </div>
-        )}
+      {/* ─── Mobile Bottom Tab Navigation (Slim 2-Tab Mode) ─── */}
+      <div className="mobile-only" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: '64px', background: 'rgba(10,12,18,0.95)', borderTop: '1px solid var(--border-color)', display: 'flex', zIndex: 1000, backdropFilter: 'blur(20px)' }}>
+          <button onClick={() => setMobileTab('market')} style={{ flex: 1, border: 'none', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: mobileTab === 'market' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>
+             <Globe size={20} />
+             <span style={{ fontSize: '10px', fontWeight: 900 }}>MARKET_ANALYSIS</span>
+          </button>
+          <button onClick={() => setMobileTab('portfolio')} style={{ flex: 1, border: 'none', background: 'transparent', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', color: mobileTab === 'portfolio' ? 'var(--accent-brand)' : 'var(--text-muted)' }}>
+             <Briefcase size={20} />
+             <span style={{ fontSize: '10px', fontWeight: 900 }}>MY_PORTFOLIO</span>
+          </button>
       </div>
 
-      {remoteLoginActive && (
-        <motion.div 
-          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
-        >
-          <motion.div 
-            initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }}
-            style={{ background: 'var(--bg-panel)', padding: '32px', borderRadius: '24px', border: '1px solid var(--border-color)', width: '100%', maxWidth: '560px', boxShadow: '0 24px 48px rgba(0,0,0,0.5)', textAlign: 'center' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', marginBottom: '24px' }}>
-              <div style={{ width: '12px', height: '12px', background: 'var(--accent-brand)', borderRadius: '50%', boxShadow: '0 0 10px var(--accent-brand)' }} />
-              <h3 style={{ fontSize: '20px', fontWeight: 900, letterSpacing: '0.05em', color: '#fff', margin: 0 }}>TOSS SECURE AUTH</h3>
-            </div>
-
-            <div style={{ background: 'rgba(0,0,0,0.2)', padding: '24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px', minHeight: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {loginMethod === 'qr' ? (
-                <div style={{ width: '100%' }}>
-                  {liveScreenshot ? (
-                    <img src={`data:image/jpeg;base64,${liveScreenshot}`} style={{ width: '100%', borderRadius: '12px', boxShadow: '0 8px 16px rgba(0,0,0,0.3)' }} />
-                  ) : (
-                    <div style={{ color: 'var(--text-muted)', fontSize: '14px' }}><div className="animate-pulse" style={{ marginBottom: '12px' }}><RefreshCw size={32} /></div>QR 코드를 생성 중입니다...</div>
-                  )}
-                </div>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        
+        {/* ─── Desktop Multi-Section Sidebar (Ticker & Portfolio Unified) ─── */}
+        <aside className="desktop-only" style={{ width: '320px', borderRight: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', background: 'rgba(0,0,0,0.15)' }}>
+          
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {/* Asset Section */}
+            <div style={{ padding: '24px 20px 12px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Briefcase size={12} />MY_ASSETS_STATE</div>
+              {portfolioData?.items?.length > 0 ? (
+                portfolioData.items.map((item: any) => (
+                  <motion.div key={item.ticker} onClick={() => { setSelectedTicker(item.ticker); handleSelectTicker(item.ticker); setActiveTab('overview'); }} whileHover={{ x: 4, background: 'rgba(255,255,255,0.02)' }} style={{ padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', marginBottom: '6px', border: '1px solid transparent', borderColor: selectedTicker === item.ticker ? 'rgba(139,92,246,0.2)' : 'transparent', background: selectedTicker === item.ticker ? 'rgba(139,92,246,0.05)' : 'transparent' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 900, color: '#fff', fontSize: '13px' }}>{item.ticker}</span>
+                      <span className="nums" style={{ fontSize: '11px', color: item.returnRate >= 0 ? 'var(--accent-up)' : 'var(--accent-down)', fontWeight: 800 }}>{item.returnRate >= 0 ? '+' : ''}{item.returnRate.toFixed(1)}%</span>
+                    </div>
+                  </motion.div>
+                ))
               ) : (
-                <form onSubmit={handleTossPhoneLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
-                  <div style={{ textAlign: 'left' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>USER_NAME</label>
-                    <input type="text" placeholder="홍길동" value={phoneDetails.name} onChange={e => setPhoneDetails({...phoneDetails, name: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>BIRTH_DATE (YYMMDD)</label>
-                    <input type="text" placeholder="900101" value={phoneDetails.birthday} onChange={e => setPhoneDetails({...phoneDetails, birthday: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px', display: 'block' }}>PHONE_NUMBER</label>
-                    <input type="text" placeholder="01012345678" value={phoneDetails.phone} onChange={e => setPhoneDetails({...phoneDetails, phone: e.target.value})} style={{ width: '100%', padding: '14px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '8px', fontSize: '14px' }} />
-                  </div>
-                  <button type="submit" disabled={loginProgress} style={{ padding: '16px', background: 'var(--accent-brand)', color: '#000', borderRadius: '8px', fontWeight: 900, cursor: 'pointer', marginTop: '8px', border: 'none' }}>
-                    {loginProgress ? '인증 요청 중...' : '휴대폰 번호로 인증 시작'}
-                  </button>
-                </form>
+                <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>포트폴리오 연동이 필요합니다.</div>
               )}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
-              <button 
-                onClick={() => setLoginMethod(loginMethod === 'qr' ? 'phone' : 'qr')}
-                style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-              >
-                {loginMethod === 'qr' ? '휴대폰 번호로 변경' : 'QR 코드로 변경'}
-              </button>
-              <button 
-                onClick={handleManualLoginClick}
-                disabled={confirmingLogin}
-                style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', color: '#fff', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-              >
-                {confirmingLogin ? '요청 중...' : '강제 로그인 클릭'}
-              </button>
-            </div>
+            <div style={{ margin: '0 20px', borderTop: '1px solid var(--border-color)' }} />
 
-            <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '24px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px' }}>CURRENT_STATUS [RELAXED_TIMEOUT: 10M]</div>
-              <div style={{ color: 'var(--accent-brand)', fontSize: '14px', fontWeight: 700 }}>{loginStatus}</div>
+            {/* Watchlist Section */}
+            <div style={{ padding: '20px' }}>
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}><Eye size={12} />WATCHLIST_CORE</div>
+              {['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN', 'GOOGL', 'META', 'NFLX', 'AMD', 'COIN'].map(ticker => (
+                <motion.div key={ticker} onClick={() => { setSelectedTicker(ticker); handleSelectTicker(ticker); setActiveTab('overview'); }} whileHover={{ x: 4, background: 'rgba(255,255,255,0.02)' }} style={{ padding: '10px 14px', borderRadius: '10px', cursor: 'pointer', marginBottom: '4px', border: '1px solid transparent', borderColor: selectedTicker === ticker ? 'rgba(139,92,246,0.2)' : 'transparent', background: selectedTicker === ticker ? 'rgba(139,92,246,0.05)' : 'transparent' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 900, fontSize: '13px', color: selectedTicker === ticker ? 'var(--accent-brand)' : '#fff' }}>{ticker}</span>
+                      <Sparkles size={12} color="rgba(255,255,255,0.2)" />
+                   </div>
+                </motion.div>
+              ))}
             </div>
+          </div>
+        </aside>
 
-            <button 
-              onClick={() => setRemoteLoginActive(false)}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '12px', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
-            >
-              CLOSE WINDOW
-            </button>
+        {/* ─── Main Content Switcher ─── */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+           <AnimatePresence mode="wait">
+             
+             {/* ─── CASE: OVERVIEW (Responsive Dashboard) ─── */}
+             {window.innerWidth > 1024 && activeTab === 'overview' && (
+                <motion.div key="overview-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="terminal-grid" style={{ display: 'grid', gridTemplateColumns: window.innerWidth > 1024 ? 'minmax(0, 1fr) 400px' : '1fr', gap: window.innerWidth > 1024 ? '32px' : '0', padding: window.innerWidth > 1024 ? '32px' : '0' }}>
+                   <section className="terminal-panel" style={{ height: window.innerWidth > 1024 ? '540px' : '300px', border: 'none' }}><TradingViewChart ticker={selectedTicker || 'AAPL'} /></section>
+                   <aside className="terminal-panel" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', border: 'none' }}>
+                      <div className="terminal-header"><span>SOCIAL_INTELLIGENCE</span></div>
+                      <div className="terminal-content" style={{ overflowY: 'auto', padding: 0 }}>
+                         <div style={{ padding: '24px 20px' }}><SentimentInsight insight={insightData} loading={sentimentLoading} /></div>
+                         <div style={{ height: '240px', padding: '0 20px' }}>{timelineData && <SentimentTimeline timeline={timelineData.timeline} />}</div>
+                         <div className="smart-sync-section" style={{ margin: '20px', padding: '20px', background: 'rgba(255,255,255,0.02)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                            <button onClick={handleTriggerScrap} disabled={isScraping} style={{ width: '100%', padding: '14px', background: 'var(--accent-brand)', color: '#000', borderRadius: '8px', fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}><RefreshCw size={16} className={isScraping ? 'animate-spin' : ''} />{isScraping ? "SCROLLING_THREADS..." : "START_LIVE_SYNC"}</button>
+                         </div>
+                         <div style={{ padding: '0 20px 24px' }}>{ratioData && <SentimentRatio {...ratioData} />}</div>
+                         <div style={{ borderTop: '1px solid var(--border-color)', padding: '16px' }}><PostList posts={postsData?.posts || []} /></div>
+                      </div>
+                   </aside>
+
+                   {/* Sub-Data Section (Smart Money Feed) */}
+                   <section className="terminal-panel" style={{ minHeight: '400px', border: 'none' }}>
+                      <div className="terminal-header">
+                        <div className="mobile-scroll-container" style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+                           <button onClick={() => setMarketContentTab('insiders')} className={marketContentTab === 'insiders' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'insiders' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>INSIDER_FLOW</button>
+                           <button onClick={() => setMarketContentTab('politicians')} className={marketContentTab === 'politicians' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'politicians' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>POLITICIAN_RADAR</button>
+                           <button onClick={() => setMarketContentTab('institutions')} className={marketContentTab === 'institutions' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'institutions' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>INSTITUTIONAL_HOLDINGS</button>
+                        </div>
+                      </div>
+                      <div className="terminal-content" style={{ padding: '24px', overflowY: 'auto' }}>
+                         <table className="data-table">
+                            {marketContentTab === 'insiders' ? (
+                               <><thead><tr><th>OFFICER</th><th>SIDE</th><th>SHARES</th><th>VALUE</th><th>FILED</th></tr></thead>
+                               <tbody>{insiderTrades.map((tr, idx) => (<tr key={idx}><td>{tr.officerName}</td><td className={tr.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{tr.side}</td><td>{tr.shares?.toLocaleString()}</td><td>${(tr.value / 1000).toFixed(0)}K</td><td>{new Date(tr.transactionDate).toLocaleDateString()}</td></tr>))}</tbody></>
+                            ) : marketContentTab === 'politicians' ? (
+                               <><thead><tr><th>POLITICIAN</th><th>PARTY</th><th>SIDE</th><th>AMOUNT</th><th>DATE</th></tr></thead>
+                               <tbody>{politicians.map((pt, idx) => (<tr key={idx}><td>{pt.politicianName}</td><td>{pt.party}</td><td className={pt.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{pt.side}</td><td className="nums">{pt.amountRange}</td><td>{new Date(pt.transactionDate).toLocaleDateString()}</td></tr>))}</tbody></>
+                            ) : (
+                               <><thead><tr><th>INSTITUTION_ENTITY</th><th>TOTAL_SHARES</th><th>QUARTERLY_DELTA</th><th>REPORT_DATE</th></tr></thead>
+                               <tbody>{institutions.map((ih, idx) => (<tr key={idx}><td>{ih.investorName}</td><td className="nums">{ih.totalShares?.toLocaleString()}</td><td style={{ color: ih.changeAmount >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{ih.changeAmount >= 0 ? '+' : ''}{ih.changePercentage?.toFixed(2)}%</td><td>{new Date(ih.reportDate).toLocaleDateString()}</td></tr>))}</tbody></>
+                            )}
+                         </table>
+                      </div>
+                   </section>
+                </motion.div>
+             )}
+
+             {/* ─── CASE: MARKET (Macro Yield Curve & Strategy) ─── */}
+             {window.innerWidth > 1024 && activeTab === 'market' && (
+                <motion.div key="market-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ height: '100%', overflow: 'hidden' }}>
+                   <TrendReversalTab />
+                </motion.div>
+             )}
+
+             {/* ─── CASE: PORTFOLIO (Full Asset Management) ─── */}
+             {window.innerWidth > 1024 && activeTab === 'portfolio' && (
+                <motion.div key="portfolio-view" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ padding: '40px' }}>
+                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+                      <h2 style={{ fontSize: '36px', fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>ASSET_PORTFOLIO</h2>
+                      <div style={{ display: 'flex', gap: '32px' }}>
+                         <div style={{ textAlign: 'right' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>VALUE_VALUATION</div><div className="nums" style={{ fontSize: '28px', fontWeight: 900 }}>${portfolioData?.totalAssetValue?.toLocaleString() || '0'}</div></div>
+                         <div style={{ textAlign: 'right' }}><div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>TOTAL_ROI</div><div className="nums" style={{ fontSize: '28px', fontWeight: 900, color: (portfolioData?.totalReturnRate || 0) >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{(portfolioData?.totalReturnRate || 0) >= 0 ? '+' : ''}{portfolioData?.totalReturnRate?.toFixed(2)}%</div></div>
+                      </div>
+                   </div>
+                   <div className="terminal-panel" style={{ overflow: 'hidden' }}>
+                      <table className="data-table">
+                         <thead><tr><th>TICKER</th><th>ASSET</th><th>QUANTITY</th><th>PRICE</th><th>RETURN</th><th>VALUATION</th></tr></thead>
+                         <tbody>{portfolioData?.items.map((item: any) => (<tr key={item.ticker} onClick={() => { setSelectedTicker(item.ticker); setActiveTab('overview'); handleSelectTicker(item.ticker); }} style={{ cursor: 'pointer' }}><td>{item.ticker}</td><td>{item.name}</td><td>{item.quantity}</td><td>${item.currentPrice?.toLocaleString()}</td><td style={{ color: item.returnRate >= 0 ? 'var(--accent-up)' : 'var(--accent-down)', fontWeight: 900 }}>{item.returnRate.toFixed(2)}%</td><td className="nums">${(item.currentPrice * item.quantity).toLocaleString()}</td></tr>))}</tbody>
+                      </table>
+                   </div>
+                </motion.div>
+             )}
+
+             {/* ─── CASE: RADAR (Real-time Event Watch Feed) ─── */}
+             {window.innerWidth > 1024 && activeTab === 'radar' && (
+                <motion.div key="radar-view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ padding: '32px' }}>
+                   <div style={{ marginBottom: '32px' }}><h2 style={{ fontSize: '32px', fontWeight: 900, color: '#fff', margin: 0 }}>RADAR_WATCH_FEED</h2><p style={{ color: 'var(--text-muted)', fontSize: '14px', marginTop: '4px' }}>글로벌 시장의 수급 이벤트를 0.5초 주기로 스캔합니다.</p></div>
+                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '20px' }}>
+                      {radarFeed.length > 0 ? radarFeed.map((event, i) => (
+                        <motion.div key={i} whileHover={{ y: -4, background: 'rgba(255,255,255,0.03)' }} style={{ padding: '24px', background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ padding: '6px 12px', background: 'rgba(139,92,246,0.1)', borderRadius: '6px', color: 'var(--accent-brand)', fontSize: '10px', fontWeight: 900 }}>{event.category || 'EVENT'}</div>
+                              <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(event.timestamp || Date.now()).toLocaleTimeString()}</span>
+                           </div>
+                           <div style={{ fontSize: '16px', fontWeight: 800, color: '#fff', lineHeight: 1.5 }}>{event.title}</div>
+                           <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{event.description}</div>
+                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
+                              <div style={{ padding: '4px 10px', borderRadius: '4px', background: 'rgba(255,255,255,0.03)', fontSize: '11px', fontWeight: 800, color: 'var(--text-muted)' }}>{event.ticker}</div>
+                              <ArrowUpRight size={14} color="var(--accent-brand)" />
+                           </div>
+                        </motion.div>
+                      )) : [1,2,3,4,5,6].map(i => <div key={i} style={{ height: '160px', background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--border-color)' }}><ShimmerLine /></div>)}
+                   </div>
+                </motion.div>
+             )}
+
+             {/* ─── CASE: MOBILE STOCK DETAIL 2.0 (HIGH-FIDELITY) ─── */}
+             {window.innerWidth <= 1024 && mobileTab === 'ticker' && (
+                <motion.div key="mobile-ticker-v2" className="mobile-only" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} style={{ height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg-dark)' }}>
+                   
+                   {/* Ticker Header & Dynamic Sub-Tabs */}
+                   <div style={{ padding: '20px', paddingBottom: '0', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border-color)', position: 'sticky', top: 0, zIndex: 10 }}>
+                      {(sentimentLoading || isScraping) && (
+                         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2px', background: 'rgba(255,255,255,0.05)', zIndex: 20 }}>
+                            <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ height: '100%', background: 'var(--accent-brand)', boxShadow: '0 0 12px var(--accent-brand)' }} />
+                         </div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                           <div style={{ width: '4px', height: '24px', background: 'var(--accent-brand)', borderRadius: '2px' }} />
+                           <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#fff', margin: 0 }}>{selectedTicker}</h2>
+                         </div>
+                         <button onClick={() => setMobileTab('portfolio')} style={{ fontSize: '10px', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', padding: '6px 14px', borderRadius: '12px', fontWeight: 900, letterSpacing: '0.05em' }}>CLOSE_TERMINAL</button>
+                      </div>
+                      
+                      {/* SUB-TAB NAVIGATOR */}
+                      <div style={{ display: 'flex', gap: '4px', paddingBottom: '12px', overflowX: 'auto' }} className="mobile-scroll-container">
+                         {(['chart', 'insight', 'smart', 'feed'] as const).map(tab => (
+                            <button key={tab} onClick={() => setTickerSubTab(tab)} style={{ flexShrink: 0, padding: '10px 18px', borderRadius: '12px', border: '1px solid', borderColor: tickerSubTab === tab ? 'rgba(252,213,53,0.3)' : 'transparent', background: tickerSubTab === tab ? 'rgba(252,213,53,0.1)' : 'transparent', color: tickerSubTab === tab ? 'var(--accent-brand)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, textTransform: 'uppercase', transition: 'all 0.3s ease' }}>
+                               {tab}
+                            </button>
+                         ))}
+                      </div>
+                   </div>
+
+                   <div style={{ flex: 1, overflowY: 'auto', padding: '20px', paddingBottom: '110px' }}>
+                      <AnimatePresence mode="wait">
+                         {tickerSubTab === 'chart' && (
+                            <motion.div key="sub-chart" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                               {/* Realtime Indicators moved to TOP per user request */}
+                               <div style={{ padding: '20px', background: 'rgba(252,213,53,0.03)', borderRadius: '20px', border: '1px dashed rgba(252,213,53,0.2)' }}>
+                                  <div style={{ fontSize: '11px', color: 'var(--accent-brand)', fontWeight: 900, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                     <Activity size={14} /> REALTIME_INDICATORS
+                                  </div>
+                                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{insightData?.summary || "종목의 실시간 수급 및 소셜 심리를 분석하고 있습니다. 잠시만 기다려 주십시오."}</div>
+                                </div>
+                                
+                                <div style={{ height: '500px', background: 'var(--bg-card)', borderRadius: '24px', overflow: 'hidden', border: '1px solid var(--border-color)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+                                  <TradingViewChart ticker={selectedTicker || 'AAPL'} />
+                               </div>
+                            </motion.div>
+                         )}
+
+                         {tickerSubTab === 'insight' && (
+                            <motion.div key="sub-insight" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                               {isInsightLoading && (
+                                 <div style={{ height: '2px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', borderRadius: '1px' }}>
+                                   <motion.div initial={{ x: '-100%' }} animate={{ x: '100%' }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} style={{ height: '100%', width: '30%', background: 'var(--accent-brand)' }} />
+                                 </div>
+                               )}
+                               <SentimentInsight insight={insightData} loading={isInsightLoading} />
+                               <div style={{ height: '240px', background: 'var(--bg-card)', borderRadius: '24px', padding: '20px', border: '1px solid var(--border-color)', position: 'relative' }}>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '16px' }}>SENTIMENT_TIMELINE</div>
+                                  {isInsightLoading && !timelineData ? <ShimmerLine /> : (timelineData && <SentimentTimeline timeline={timelineData.timeline} />)}
+                               </div>
+                               <div style={{ background: 'var(--bg-card)', borderRadius: '24px', padding: '20px', border: '1px solid var(--border-color)', position: 'relative' }}>
+                                  <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '16px' }}>SENTIMENT_RATIO</div>
+                                  {isInsightLoading && !ratioData ? <ShimmerLine /> : (ratioData && <SentimentRatio {...ratioData} />)}
+                               </div>
+                            </motion.div>
+                         )}
+
+                         {tickerSubTab === 'smart' && (
+                            <motion.div key="sub-smart" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                               <section className="terminal-panel" style={{ border: 'none', background: 'rgba(255,255,255,0.02)', borderRadius: '24px', overflow: 'hidden' }}>
+                                  <div className="terminal-header" style={{ padding: '16px', background: 'rgba(255,255,255,0.03)' }}>
+                                    <div className="mobile-scroll-container" style={{ display: 'flex', gap: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+                                       <button onClick={() => setMarketContentTab('insiders')} className={marketContentTab === 'insiders' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'insiders' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>INSIDER_FLOW</button>
+                                       <button onClick={() => setMarketContentTab('politicians')} className={marketContentTab === 'politicians' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'politicians' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>POLITICIAN</button>
+                                       <button onClick={() => setMarketContentTab('institutions')} className={marketContentTab === 'institutions' ? 'active' : ''} style={{ background: 'transparent', border: 'none', color: marketContentTab === 'institutions' ? '#fff' : 'var(--text-muted)', fontSize: '11px', fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap' }}>INSTITUTIONAL</button>
+                                    </div>
+                                  </div>
+                                  <div className="terminal-content" style={{ padding: '16px', overflowX: 'auto', position: 'relative' }}>
+                                     {isSmartLoading && (
+                                       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+                                         <motion.div initial={{ x: '-100%' }} animate={{ x: '100%' }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }} style={{ height: '100%', width: '40%', background: 'var(--accent-brand)' }} />
+                                       </div>
+                                     )}
+                                     <table className="data-table" style={{ fontSize: '11px' }}>
+                                        {isSmartLoading && insiderTrades.length === 0 ? (
+                                           <tbody>{[1,2,3,4,5,6].map(i => <tr key={i}><td colSpan={4} style={{ padding: 0 }}><ShimmerLine /></td></tr>)}</tbody>
+                                        ) : marketContentTab === 'insiders' ? (
+                                           <><thead><tr><th>ENTITY</th><th>SIDE</th><th>VALUE</th><th>FILED</th></tr></thead>
+                                           <tbody>{insiderTrades.slice(0, 15).map((tr, idx) => (
+                                             <tr key={idx}>
+                                               <td style={{ maxWidth: '100px' }}>
+                                                 <div style={{ fontWeight: 900, color: '#fff', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr.insiderName}</div>
+                                                 <div style={{ fontSize: '9px', color: 'var(--text-muted)' }}>{tr.role || 'Officer'}</div>
+                                               </td>
+                                               <td className={tr.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{tr.side}</td>
+                                               <td>${((tr.shares * tr.pricePerShare) / 1000).toFixed(0)}K</td>
+                                               <td>{new Date(tr.transactionDate).toLocaleDateString()}</td>
+                                             </tr>
+                                           ))}</tbody></>
+                                        ) : marketContentTab === 'politicians' ? (
+                                           <><thead><tr><th>POLITICIAN</th><th>SIDE</th><th>AMOUNT</th><th>DATE</th></tr></thead>
+                                           <tbody>{politicians.slice(0, 15).map((pt, idx) => (
+                                             <tr key={idx}>
+                                               <td>
+                                                 <div style={{ fontWeight: 900, color: '#fff', fontSize: '11px' }}>{pt.politicianName}</div>
+                                                 <div style={{ fontSize: '9px', color: pt.party === 'Democrat' ? '#3b82f6' : '#ef4444' }}>{pt.party}</div>
+                                               </td>
+                                               <td className={pt.side === 'BUY' ? 'insider-buy' : 'insider-sell'}>{pt.side}</td>
+                                               <td className="nums">{pt.amountRange}</td>
+                                               <td>{new Date(pt.transactionDate).toLocaleDateString()}</td>
+                                             </tr>
+                                           ))}</tbody></>
+                                        ) : (
+                                           <><thead><tr><th>INSTITUTION</th><th>TOTAL</th><th>DELTA</th><th>DATE</th></tr></thead>
+                                           <tbody>{institutions.slice(0, 15).map((ih, idx) => (
+                                             <tr key={idx}>
+                                               <td style={{ maxWidth: '120px' }}>
+                                                 <div style={{ fontWeight: 900, color: '#fff', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ih.investorName}</div>
+                                               </td>
+                                               <td className="nums">{ih.totalShares?.toLocaleString()}</td>
+                                               <td style={{ color: ih.changeAmount >= 0 ? 'var(--accent-up)' : 'var(--accent-down)', fontWeight: 800 }}>{ih.changePercentage?.toFixed(2)}%</td>
+                                               <td>{new Date(ih.reportDate).toLocaleDateString()}</td>
+                                             </tr>
+                                           ))}</tbody></>
+                                        )}
+                                     </table>
+                                  </div>
+                               </section>
+                            </motion.div>
+                         )}
+
+                         {tickerSubTab === 'feed' && (
+                            <motion.div key="sub-feed" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                     <Activity size={14} color="var(--accent-brand)" className={isFeedLoading ? 'animate-pulse' : ''} />
+                                     <span style={{ fontSize: '13px', fontWeight: 900, color: '#fff', letterSpacing: '0.05em' }}>REALTIME_SOCIAL_DATA</span>
+                                  </div>
+                                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 800 }}>
+                                     {isFeedLoading ? "FETCHING..." : `${postsData?.posts?.length || 0}_THREADS`}
+                                  </span>
+                               </div>
+
+                               <div style={{ borderRadius: '24px', overflow: 'hidden', border: '1px solid var(--border-color)', background: 'var(--bg-card)', position: 'relative' }}>
+                                  {isFeedLoading && (
+                                     <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', zIndex: 5 }}>
+                                        <motion.div initial={{ x: '-100%' }} animate={{ x: '100%' }} transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }} style={{ height: '100%', width: '25%', background: 'var(--accent-brand)' }} />
+                                     </div>
+                                  )}
+                                  {(isFeedLoading && !postsData) ? (
+                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+                                        {[1, 2, 3, 4, 5].map(i => (
+                                           <div key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                                              <ShimmerLine />
+                                           </div>
+                                        ))}
+                                     </div>
+                                  ) : (
+                                     <PostList posts={postsData?.posts || []} />
+                                  )}
+                               </div>
+                            </motion.div>
+                         )}
+                      </AnimatePresence>
+                   </div>
+
+                   {/* Mobile Floating Sync Button (Scrap Button) */}
+                   <motion.button 
+                      whileHover={{ scale: 1.1 }}
+                      whileTap={{ scale: 0.9 }}
+                      onClick={handleTriggerScrap}
+                      disabled={isScraping}
+                      style={{ 
+                        position: 'fixed', 
+                        bottom: '90px', 
+                        right: '24px', 
+                        width: '64px', 
+                        height: '64px', 
+                        borderRadius: '32px', 
+                        background: 'var(--accent-brand)', 
+                        color: '#000', 
+                        border: 'none', 
+                        boxShadow: '0 12px 32px rgba(252,213,53,0.4)', 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        zIndex: 2000,
+                        cursor: 'pointer'
+                      }}
+                   >
+                      <RefreshCw size={28} className={isScraping ? 'animate-spin' : ''} />
+                   </motion.button>
+                </motion.div>
+             )}
+
+             {/* ─── CASE: MOBILE MARKET ─── */}
+             {window.innerWidth <= 1024 && mobileTab === 'market' && (
+                <motion.div key="mobile-market" className="mobile-only" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ height: '100%', paddingBottom: '100px', overflowY: 'auto' }}>
+                   <div style={{ padding: '24px 20px 0' }}><h2 style={{ fontSize: '24px', fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '-0.02em' }}>MARKET_STATUS</h2></div>
+                   
+                   {/* Quick Ticker Access for Mobile */}
+                   <div style={{ padding: '20px' }}>
+                      <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '12px', letterSpacing: '0.05em' }}>TRENDING_TICKERS</div>
+                      <div className="mobile-scroll-container" style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px' }}>
+                         {['AAPL', 'TSLA', 'NVDA', 'MSFT', 'COIN', 'AMD'].map(ticker => (
+                            <button key={ticker} onClick={() => { setSelectedTicker(ticker); handleSelectTicker(ticker); setMobileTab('ticker'); }} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '12px 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', minWidth: '90px' }}>
+                               <span style={{ fontWeight: 900, fontSize: '14px', color: 'var(--accent-brand)' }}>{ticker}</span>
+                               <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 700 }}>EXPLORE</span>
+                            </button>
+                         ))}
+                      </div>
+                   </div>
+
+                   <TrendReversalTab />
+                </motion.div>
+             )}
+
+             {/* ─── CASE: MOBILE PORTFOLIO ─── */}
+             {window.innerWidth <= 1024 && mobileTab === 'portfolio' && (
+                <motion.div key="mobile-portfolio" className="mobile-only" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', flexDirection: 'column' }}>
+                   <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--border-color)', background: 'rgba(0,0,0,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                     <div>
+                       <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#fff', margin: 0 }}>MY_PORTFOLIO</h2>
+                       <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginTop: '4px' }}>REALTIME_ASSET_VALUATION</div>
+                     </div>
+                     <button onClick={() => setRemoteLoginActive(true)} style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(252,213,53,0.1)', border: '1px solid rgba(252,213,53,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><User size={20} color="var(--accent-brand)" /></button>
+                   </div>
+                   
+                   {loginProgress && (
+                      <div style={{ height: '2px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden' }}>
+                         <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ height: '100%', background: 'var(--accent-brand)', boxShadow: '0 0 12px var(--accent-brand)' }} />
+                      </div>
+                   )}
+
+                   {/* Sorting Filters */}
+                   <div style={{ padding: '16px 20px', display: 'flex', gap: '8px', overflowX: 'auto', background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border-color)' }}>
+                      <button onClick={() => setPortfolioSortKey('ticker')} style={{ background: portfolioSortKey === 'ticker' ? 'var(--accent-brand)' : 'rgba(255,255,255,0.05)', color: portfolioSortKey === 'ticker' ? '#000' : 'var(--text-muted)', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap' }}>NAME🔗</button>
+                      <button onClick={() => setPortfolioSortKey('return')} style={{ background: portfolioSortKey === 'return' ? 'var(--accent-brand)' : 'rgba(255,255,255,0.05)', color: portfolioSortKey === 'return' ? '#000' : 'var(--text-muted)', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap' }}>ROI%🔥</button>
+                      <button onClick={() => setPortfolioSortKey('valuation')} style={{ background: portfolioSortKey === 'valuation' ? 'var(--accent-brand)' : 'rgba(255,255,255,0.05)', color: portfolioSortKey === 'valuation' ? '#000' : 'var(--text-muted)', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '10px', fontWeight: 900, whiteSpace: 'nowrap' }}>VALUE💎</button>
+                   </div>
+
+                   <div style={{ padding: '20px', paddingBottom: '100px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {[...(portfolioData?.items || [])].sort((a, b) => {
+                      if (portfolioSortKey === 'return') return b.returnRate - a.returnRate;
+                      if (portfolioSortKey === 'valuation') return (b.currentPrice * b.quantity) - (a.currentPrice * a.quantity);
+                      return a.ticker.localeCompare(b.ticker);
+                    }).map((item: any) => (
+                       <motion.div 
+                          key={item.ticker} 
+                          animate={loginProgress ? { opacity: [1, 0.4, 1] } : {}}
+                          transition={loginProgress ? { repeat: Infinity, duration: 1.5 } : {}}
+                          onClick={() => { setSelectedTicker(item.ticker); handleSelectTicker(item.ticker); setMobileTab('ticker'); }} 
+                          style={{ padding: '16px', background: 'var(--bg-card)', borderRadius: '20px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }}
+                       >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <div>
+                               <div style={{ fontWeight: 900, color: '#fff', fontSize: '18px' }}>{item.ticker}</div>
+                               <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>{item.name}</div>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                               <div className="nums" style={{ fontSize: '18px', fontWeight: 900, color: item.returnRate >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{item.returnRate >= 0 ? '+' : ''}{item.returnRate.toFixed(2)}%</div>
+                               <div style={{ fontSize: '9px', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Current_Yield</div>
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.03)' }}>
+                             <div>
+                                <div style={{ fontSize: '8px', color: 'var(--text-muted)', fontWeight: 800 }}>QUANTITY</div>
+                                <div className="nums" style={{ fontSize: '13px', fontWeight: 900, color: '#fff' }}>{item.quantity}</div>
+                             </div>
+                             <div>
+                                <div style={{ fontSize: '8px', color: 'var(--text-muted)', fontWeight: 800 }}>PRICE</div>
+                                <div className="nums" style={{ fontSize: '13px', fontWeight: 900, color: '#fff' }}>${item.currentPrice?.toLocaleString()}</div>
+                             </div>
+                             <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '8px', color: 'var(--text-muted)', fontWeight: 800 }}>VALUATION</div>
+                                <div className="nums" style={{ fontSize: '13px', fontWeight: 900, color: 'var(--accent-brand)' }}>${(item.currentPrice * item.quantity).toLocaleString()}</div>
+                             </div>
+                          </div>
+                       </motion.div>
+                    ))}
+                   </div>
+                </motion.div>
+             )}
+
+           </AnimatePresence>
+        </div>
+      </div>
+
+      {/* ─── TOSS Secure Authentication Layer ─── */}
+      <AnimatePresence>
+        {remoteLoginActive && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10000, background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(12px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <motion.div initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} style={{ background: 'var(--bg-panel)', padding: '40px', borderRadius: '32px', border: '1px solid var(--border-color)', width: '100%', maxWidth: '520px', boxShadow: '0 32px 64px rgba(0,0,0,0.6)', position: 'relative' }}>
+               
+               {/* Login Progress Overlay */}
+               <AnimatePresence>
+                 {loginProgress && (
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ position: 'absolute', inset: 0, background: 'var(--bg-panel)', borderRadius: '32px', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px' }}>
+                    <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                       <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }} style={{ position: 'absolute', inset: 0, border: '4px solid rgba(20,184,166,0.1)', borderTop: '4px solid var(--accent-brand)', borderRadius: '50%' }} />
+                       <div style={{ position: 'absolute', inset: '20px', background: 'rgba(20,184,166,0.05)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Activity size={24} color="var(--accent-brand)" className="animate-pulse" /></div>
+                    </div>
+                    <div style={{ fontSize: '15px', fontWeight: 900, color: 'var(--accent-brand)', letterSpacing: '0.1em' }}>{loginStatus}</div>
+                    <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>보안 인증 세션을 동기화하는 중입니다.</div>
+                    {confirmingLogin && <button onClick={handleManualLoginClick} style={{ marginTop: '20px', padding: '12px 24px', background: 'var(--accent-brand)', color: '#000', borderRadius: '8px', fontWeight: 900 }}>인증 시도 완료 (수동 확인)</button>}
+                  </motion.div>
+                 )}
+               </AnimatePresence>
+
+               <div style={{ textAlign: 'center', marginBottom: '32px' }}><h3 style={{ fontSize: '24px', fontWeight: 900, color: '#fff', margin: 0, letterSpacing: '0.05em' }}>TOSS_SECURE_AUTH</h3><p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '8px' }}>사용자의 소중한 자산 정보를 안전하게 연동합니다.</p></div>
+               
+               <div style={{ background: 'rgba(0,0,0,0.2)', padding: '32px', borderRadius: '24px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '32px' }}>
+                <form onSubmit={handleTossPhoneLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <div><label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '6px', display: 'block' }}>USER_NAME_FULL</label><input type="text" value={phoneDetails.name} onChange={e => setPhoneDetails({...phoneDetails, name: e.target.value})} style={{ width: '100%', padding: '16px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '10px', fontSize: '15px' }} /></div>
+                  <div><label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '6px', display: 'block' }}>BIRTH_DATE (YYYYMMDD)</label><input type="text" value={phoneDetails.birthday} onChange={e => setPhoneDetails({...phoneDetails, birthday: e.target.value})} style={{ width: '100%', padding: '16px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '10px' }} /></div>
+                  <div><label style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '6px', display: 'block' }}>MOBILE_PHONE_NUM</label><input type="text" value={phoneDetails.phone} onChange={e => setPhoneDetails({...phoneDetails, phone: e.target.value})} style={{ width: '100%', padding: '16px', background: 'var(--bg-dark)', border: '1px solid var(--border-color)', color: '#fff', borderRadius: '10px' }} /></div>
+                  <button type="submit" style={{ padding: '18px', background: 'var(--accent-brand)', color: '#000', borderRadius: '10px', fontWeight: 900, marginTop: '12px' }}>휴대폰 인증 요청</button>
+                </form>
+               </div>
+               <div style={{ textAlign: 'center' }}><button onClick={() => setRemoteLoginActive(false)} style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', fontSize: '13px', textDecoration: 'underline' }}>나중에 연동하기</button></div>
+            </motion.div>
           </motion.div>
-        </motion.div>
-      )}
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>{showToast && <Toast message={showToast} onClose={() => setShowToast(null)} />}</AnimatePresence>
+      <SyncOverlay isVisible={isScraping} ticker={selectedTicker || ''} progress={scrapProgress.toString()} postCount={syncPostCount} status={syncJobStatus} error={syncError || undefined} onClose={() => { setIsScraping(false); }} />
     </div>
   );
 }

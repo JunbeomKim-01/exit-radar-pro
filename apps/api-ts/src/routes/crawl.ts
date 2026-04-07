@@ -234,14 +234,18 @@ export async function crawlRoutes(app: FastifyInstance) {
 
     // CrawlJob 업데이트
     if (jobId) {
-      await prisma.crawlJob.update({
-        where: { id: jobId },
-        data: {
-          status: isLastChunk ? "completed" : "running",
-          postCount: { increment: savedCount },
-          completedAt: isLastChunk ? new Date() : undefined,
-        },
-      });
+      try {
+        await prisma.crawlJob.update({
+          where: { id: jobId },
+          data: {
+            status: isLastChunk ? "completed" : "running",
+            postCount: { increment: savedCount },
+            completedAt: isLastChunk ? new Date() : undefined,
+          },
+        });
+      } catch (err) {
+        logger.warn(`CrawlJob 업데이트 건너뜐 (ID: ${jobId} 찾을 수 없음)`);
+      }
     }
 
     return reply.send({

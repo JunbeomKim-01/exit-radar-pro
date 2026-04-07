@@ -152,7 +152,7 @@ export async function sentimentRoutes(app: FastifyInstance) {
         }
       },
       orderBy: { createdAt: "desc" },
-      take: 15,
+      take: 10,
       select: { title: true, body: true },
     });
 

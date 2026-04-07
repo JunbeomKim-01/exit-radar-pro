@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en-gb" dir="ltr">
+
+<head>
+    <meta charset="utf-8">
+	<meta name="keywords" content="Insider Trading, Form 4 filings, 13D, 13G, 13F filings, Institutional Holdings, Hedge Fund Holdings, Real-Time Insider Trades, Executive Stock Transactions, Insider Alerts, OpenInsider">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="description" content="Real-time insider trading tracker for SEC Form 4 filings. Alternative analytics to OpenInsider for tracking insider buys, sells, and holdings.">
+	<title>Insider Trading Tracker | SEC Form 4 Filings and Insider Trade Analytics</title>
+	<link href="/jml_secform4/images/favicon.ico" rel="icon" type="image/vnd.microsoft.icon">
+	<link href="https://www.secform4.com/" rel="canonical">
+	<link href="/" rel="mask-icon" color="#000">
+
+    <link href="/media/system/css/joomla-fontawesome.min.css?93fc59" rel="lazy-stylesheet"><noscript><link href="/media/system/css/joomla-fontawesome.min.css?93fc59" rel="stylesheet"></noscript>
+	<link href="/media/templates/site/cassiopeia/css/template.min.css?93fc59" rel="stylesheet">
+	<link href="/media/templates/site/cassiopeia/css/global/colors_standard.min.css?93fc59" rel="stylesheet">
+	<link href="/media/templates/site/cassiopeia/css/vendor/joomla-custom-elements/joomla-alert.min.css?0.4.1" rel="stylesheet">
+	<link href="/media/templates/site/cassiopeia/css/user.css?93fc59" rel="stylesheet">
+	<link href="https://cdn.datatables.net/v/dt/dt-1.13.1/datatables.min.css" rel="stylesheet">
+	<link href="/jml_secform4/css/secform4.min.css?35" rel="stylesheet">
+	<style>:root {
+		--hue: 214;
+		--template-bg-light: #f0f4fb;
+		--template-text-dark: #495057;
+		--template-text-light: #ffffff;
+		--template-link-color: var(--link-color);
+		--template-special-color: #001B4C;
+		
+	}</style>
+	<style> .homepage-content h1 { font-size: 2em; line-height: 1.3; text-align: left; margin-bottom: 0.5em; } .homepage-content h2 { font-size: 1.6em; line-height: 1.25; text-align: left; margin-bottom: 0.5em; } .homepage-content h3 { font-size: 1.4em; line-height: 1.25; text-align: left; margin-bottom: 0.4em; } .homepage-content p, .homepage-content li { font-size: 1em; line-height: 1.6; text-align: left; } .homepage-content ul { margin-left: 1.5em; margin-bottom: 1em; } section { margin-bottom: 20px; } /* FAQ Accordion */ .faq-section .faq-item { margin-bottom: 0.8em; } .faq-section .faq-question { background: #f7f7f7; border: none; width: 100%; text-align: left; padding: 0.6em; font-size: 1em; cursor: pointer; } .faq-section .faq-answer { display: none; padding: 0.5em 1em; background: #fff; border-left: 3px solid #007bff; } .faq-section .faq-item.active .faq-answer { display: block; } </style>
+
+    <script src="/media/vendor/metismenujs/js/metismenujs.min.js?1.4.0" defer></script>
+	<script src="/media/templates/site/cassiopeia/js/mod_menu/menu-metismenu.min.js?93fc59" defer></script>
+	<script src="/media/mod_menu/js/menu.min.js?93fc59" type="module"></script>
+	<script type="application/json" class="joomla-script-options new">{"joomla.jtext":{"ERROR":"Error","MESSAGE":"Message","NOTICE":"Notice","WARNING":"Warning","JCLOSE":"Close","JOK":"OK","JOPEN":"Open"},"system.paths":{"root":"","rootFull":"https:\/\/www.secform4.com\/","base":"","baseFull":"https:\/\/www.secform4.com\/"},"csrf.token":"67638b0ac02a04d9240b42d4c17e975f"}</script>
+	<script src="/media/system/js/core.min.js?a3d8f8"></script>
+	<script src="/media/templates/site/cassiopeia/js/template.min.js?93fc59" type="module"></script>
+	<script src="/media/vendor/bootstrap/js/collapse.min.js?5.3.8" type="module"></script>
+	<script src="/media/templates/site/cassiopeia/js/user.js?93fc59"></script>
+	<script src="/media/system/js/messages.min.js?9a4811" type="module"></script>
+	<script src="https://code.jquery.com/jquery-latest.min.js"></script>
+	<script src="https://cdn.datatables.net/v/dt/dt-1.13.1/datatables.min.js"></script>
+	<script src="/jml_secform4/js/secform4.min.js?35"></script>
+	<script> document.addEventListener("DOMContentLoaded", function() { const faqItems = document.querySelectorAll(".faq-section .faq-item"); faqItems.forEach(item => { const btn = item.querySelector(".faq-question"); btn.addEventListener("click", () => { item.classList.toggle("active"); }); }); }); </script>
+	<script> var rootPath = ''; var domainPath = '/jml_secform4'; </script>
+	<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Insider Trading Tracker - SEC Form 4 Data",
+  "description": "Track insider trading filings with our Form 4 tracker. Similar tools are available on sites like OpenInsider, but SECForm4.com provides its own enhanced insider trading analytics.",
+  "url": "https://www.secform4.com",
+  "breadcrumb": {
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": "https://www.secform4.com"
+      }
+    ]
+  },
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": "https://www.secform4.com/insider-trading-search?q={query}",
+    "query-input": "required name=query"
+  }
+}
+</script>
+
+</head>
+
+<body class="site com_content wrapper-static view-article no-layout no-task itemid-101">
+    <header class="header container-header full-width">
+
+        
+                    <div class="grid-child container-below-top">
+                
+<div id="mod-custom111" class="mod-custom custom">
+    <form class="form-search" action="/insider-trading-search" method="get"><label class="element-invisible">Search ...</label> <input class="jml-search-box" name="q" type="search" placeholder="symbol, cik, or name ..." /> <button class="jml-search-button">Search</button></form></div>
+
+            </div>
+        
+                    <div class="grid-child">
+                <div class="navbar-brand">
+                    <a class="brand-logo" href="/">
+                        <span title="SecForm4.Com">SecForm4.Com</span>                    </a>
+                                    </div>
+            </div>
+        
+                    <div class="grid-child container-nav">
+                                    
+<nav class="navbar navbar-expand-lg" aria-label="Main Menu">
+    <button class="navbar-toggler navbar-toggler-right" type="button" data-bs-toggle="collapse" data-bs-target="#navbar1" aria-controls="navbar1" aria-expanded="false" aria-label="Toggle Navigation">
+        <span class="icon-menu" aria-hidden="true"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbar1">
+        <ul class="mod-menu mod-menu_dropdown-metismenu metismenu mod-list ">
+<li class="metismenu-item item-101 level-2 default current active"><a href="/" aria-current="page">Home</a></li><li class="metismenu-item item-133 level-2 deeper parent"><a href="#" >Insider Trading</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Insider Trading"></button><ul class="mm-collapse"><li class="metismenu-item item-134 level-3 deeper parent"><a href="#" >Insider Buys</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Insider Buys"></button><ul class="mm-collapse"><li class="metismenu-item item-136 level-4"><a href="/all-buys" >All Buys</a></li><li class="metismenu-item item-138 level-4"><a href="/significant-buys" >Significant Buys</a></li><li class="metismenu-item item-140 level-4"><a href="/penny-stocks-insider-buying" >Penny Stocks Insider Buying</a></li></ul></li><li class="metismenu-item item-142 level-3"><a href="/insider-sales" >Insider Sales</a></li><li class="metismenu-item item-144 level-3"><a href="/stock-options" >Stock Options</a></li><li class="metismenu-item item-146 level-3"><a href="/13d-filings" >13D filings</a></li><li class="metismenu-item item-148 level-3"><a href="/13g-filings" >13G filings</a></li><li class="metismenu-item item-150 level-3"><a href="/insider-buy-sell-ratios" >Insider Buy Sell Ratios</a></li><li class="metismenu-item item-152 level-3"><a href="/insider-trading-graph-view" >Insider Trading Graph View</a></li><li class="metismenu-item item-154 level-3"><a href="/insider-watch" >Insider Watch</a></li><li class="metismenu-item item-156 level-3"><a href="/insider-buying-top-gainers" >Insider Buying Top Gainers</a></li></ul></li><li class="metismenu-item item-157 level-2 deeper parent"><a href="#" >Institutional Investors</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Institutional Investors"></button><ul class="mm-collapse"><li class="metismenu-item item-158 level-3"><a href="/institutional-investors/hedge-funds-quarterly-reports" >Hedge Funds Quarterly Reports</a></li><li class="metismenu-item item-159 level-3"><a href="/institutional-investors/hedge-fund-lists" >Hedge Fund Lists</a></li><li class="metismenu-item item-160 level-3"><a href="/institutional-investors/top-100-hedge-funds" >Top 100 Hedge Funds</a></li><li class="metismenu-item item-161 level-3"><a href="/institutional-investors/top-100-widely-held-stocks" >Top 100 Widely Held Stocks</a></li><li class="metismenu-item item-162 level-3 deeper parent"><a href="#" >Quarterly Top Bought Stocks</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Quarterly Top Bought Stocks"></button><ul class="mm-collapse"><li class="metismenu-item item-163 level-4"><a href="/institutional-investors/quarterly-top-bought-stocks/by-dollar-amount" >Top Bought By Dollar Amount</a></li><li class="metismenu-item item-164 level-4"><a href="/institutional-investors/quarterly-top-bought-stocks/by-market-cap-percent" >Top Bought By Market Cap Percent</a></li></ul></li><li class="metismenu-item item-165 level-3 deeper parent"><a href="#" >Quarterly Top Sold Stocks</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Quarterly Top Sold Stocks"></button><ul class="mm-collapse"><li class="metismenu-item item-166 level-4"><a href="/institutional-investors/quarterly-top-sold-stocks/by-dollar-amount" >Top Sold By Dollar Amount</a></li><li class="metismenu-item item-167 level-4"><a href="/institutional-investors/quarterly-top-sold-stocks/by-market-cap-percent" >Top Sold By Market Cap Percent</a></li></ul></li><li class="metismenu-item item-168 level-3"><a href="/institutional-investors/hedge-fund-performance-screener" >Hedge Fund Performance Screener</a></li><li class="metismenu-item item-169 level-3"><a href="/institutional-investors/hedge-fund-money-flow" >Hedge Fund Money Flow</a></li><li class="metismenu-item item-242 level-3"><a href="/institutional-investors/search-hedge-funds" >Search Hedge Funds</a></li></ul></li><li class="metismenu-item item-170 level-2 deeper parent"><a href="#" >Stock Screener</a><button class="mm-collapsed mm-toggler mm-toggler-link" aria-haspopup="true" aria-expanded="false" aria-label="Stock Screener"></button><ul class="mm-collapse"><li class="metismenu-item item-172 level-3"><a href="/insider-trading-screener" >Insider Trading Screener</a></li><li class="metismenu-item item-174 level-3"><a href="/dividend-stock-screener" >Dividend Stock Screener</a></li><li class="metismenu-item item-176 level-3"><a href="/penny-stock-screener" >Penny Stock Screener</a></li></ul></li><li class="metismenu-item item-186 level-2 divider"><span class="mod-menu__separator separator">Spacer</span></li><li class="metismenu-item item-231 level-2"><a href="/account/sign-up" >Sign Up</a></li><li class="metismenu-item item-232 level-2"><a href="/account/sign-in" >Sign In</a></li></ul>
+    </div>
+</nav>
+
+                                            </div>
+            </header>
+
+    <div class="site-grid">
+        
+        
+        
+        
+        <div class="grid-child container-component">
+            
+            
+            <div id="system-message-container" aria-live="polite"></div>
+
+            <main>
+                <div class="com-content-article item-page">
+    <meta itemprop="inLanguage" content="en-GB">
+    
+    
+        
+        
+    
+    
+        
+                                                <div class="com-content-article__body">
+        <p></p> 
+<div class='jml-container'><div class="grid-container" style="padding-top: 0px; padding-right: 10px;">
+<div class="grid-item">DJIA</div>
+<div class="grid-item">46,504.70</div>
+<div class="grid-item"><span style="color:red;">-61.00</span></div>
+<div class="grid-item"><img alt="down" src="/jml_secform4/images/down_r.gif"/> <span style="color:red;">-0.13%</span></div>
+
+<div class="grid-item">NASDAQ</div>
+<div class="grid-item">21,879.20</div>
+<div class="grid-item"><span style="color:green;">38.30</span></div>
+<div class="grid-item"><img alt="up" src="/jml_secform4/images/up_g.gif"/> <span style="color:green;">0.18%</span></div>
+
+<div class="grid-item">S&amp;P</div>
+<div class="grid-item">6,582.69</div>
+<div class="grid-item"><span style="color:green;">7.37</span></div>
+<div class="grid-item"><img alt="up" src="/jml_secform4/images/up_g.gif"/> <span style="color:green;">0.11%</span></div>
+</div></div> 
+<p></p>
+<div class="homepage-content jarticle-list"><header>
+<h1>Real-Time Insider Trading &amp; Ownership Filings</h1>
+<p>SECForm4.Com tracks <strong>insider trading</strong>, <strong>institutional holdings</strong>, and <strong>Schedule 13D/13G filings</strong> in real time. We monitor SEC EDGAR filings as they happen, giving you an edge in analyzing ownership trends, hedge fund activity, and corporate insider moves.</p>
+</header>
+<section id="insider-trading">
+<h2>Insider Trading Reports</h2>
+<p>In today's market, why struggle with overwhelming information? Follow insiders and company executives - people who manage and understand the company best. Our platform provides timely, accurate data on institutional holdings and insider trading.</p>
+<p><a href="/training/what-is-insider-trading">Read more &gt;&gt;</a></p>
+<p><a href="/all-buys">Browse Live Insider Trades</a></p>
+<h3>Insider Buy/Sell Ratio</h3>
+<p>Insider buy and sell ratio charts help predict market movements. Statistics show insiders buy low and sell high. Monitor ratios to gauge bullish or bearish sentiment.</p>
+<p><a href="/insider-buy-sell-ratios">Read More &gt;&gt;</a></p>
+<p></p> 
+<div class="sample-list"><div class='jml-container'>
+<div class="sample-buys">
+  <h4>Top 10 Searched Companies</h4>
+  <ol>
+    <li><a href='insider-trading/1318605.htm'>Tesla Inc.</a></li>
+    <li><a href='insider-trading/320193.htm'>APPLE INC</a></li>
+    <li><a href='insider-trading/1045810.htm'>NVIDIA CORP</a></li>
+    <li><a href='insider-trading/1018724.htm'>AMAZON COM INC</a></li>
+    <li><a href='insider-trading/1321655.htm'>Palantir Technologies Inc.</a></li>
+    <li><a href='insider-trading/789019.htm'>MICROSOFT CORP</a></li>
+    <li><a href='insider-trading/1108524.htm'>SALESFORCE COM INC</a></li>
+    <li><a href='insider-trading/1326801.htm'>Meta Platforms Inc.</a></li>
+    <li><a href='insider-trading/1690820.htm'>CARVANA CO.</a></li>
+    <li><a href='insider-trading/50863.htm'>INTEL CORP</a></li>
+
+  </ol>
+</div>
+</div><div class='jml-container'>
+<div class="sample-buys">
+  <h4>Top 10 Searched Insiders</h4>
+  <ol>
+    <li><a href='insider-trading/1548760.htm'>Zuckerberg Mark</a></li>
+    <li><a href='insider-trading/1494730.htm'>Musk Elon</a></li>
+    <li><a href='insider-trading/1294693.htm'>Benioff Marc</a></li>
+    <li><a href='insider-trading/1043298.htm'>BEZOS JEFFREY P</a></li>
+    <li><a href='insider-trading/315090.htm'>BUFFETT WARREN E</a></li>
+    <li><a href='insider-trading/1263508.htm'>BAKER BROS. ADVISORS LP</a></li>
+    <li><a href='insider-trading/898860.htm'>FROST PHILLIP MD</a></li>
+    <li><a href='insider-trading/1197649.htm'>HUANG JEN HSUN</a></li>
+    <li><a href='insider-trading/902012.htm'>GATES WILLIAM H III</a></li>
+    <li><a href='insider-trading/1211060.htm'>THIEL PETER</a></li>
+
+  </ol>
+</div>
+</div><div class='jml-container'>
+<div class="sample-buys">
+  <h4>Stocks with Recent Insider Purchases</h4>
+  <ul>
+    <li class="row">
+      <div class="gain">+380%</div>
+      <div class="company"><a href="/insider-trading/1748790.htm">Amcor plc</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+278%</div>
+      <div class="company"><a href="/insider-trading/1827635.htm">Veradermics Inc</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+203%</div>
+      <div class="company"><a href="/insider-trading/1718405.htm">HYCROFT MINING HOLDING CORP</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+102%</div>
+      <div class="company"><a href="/insider-trading/723612.htm">AVIS BUDGET GROUP INC.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+101%</div>
+      <div class="company"><a href="/insider-trading/2079999.htm">Cardinal Infrastructure Group Inc.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+97%</div>
+      <div class="company"><a href="/insider-trading/1684693.htm">Sol-Gel Technologies Ltd.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+85%</div>
+      <div class="company"><a href="/insider-trading/2065708.htm">Andersen Group Inc.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+77%</div>
+      <div class="company"><a href="/insider-trading/1468748.htm">Kodiak Sciences Inc.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+70%</div>
+      <div class="company"><a href="/insider-trading/1408534.htm">First Guaranty Bancshares Inc.</a></div>
+    </li>
+    <li class="row">
+      <div class="gain">+62%</div>
+      <div class="company"><a href="/insider-trading/797468.htm">OCCIDENTAL PETROLEUM CORP</a></div>
+    </li>
+  </ul>
+</div>
+</div></div> 
+<p></p>
+</section>
+<!-- Institutional Holdings -->
+<section id="institutional-holdings">
+<h2>Institutional Holdings</h2>
+<p>Discover how large institutions and hedge funds allocate capital. Our institutional holders database shows the top shareholders and recent changes in ownership.</p>
+<p><a class="read-more" href="/institutional-investors/top-100-hedge-funds">Explore Top 100 Hedge Fund Holdings</a></p>
+</section>
+<!-- New 13D/13G Section -->
+<section id="13d-13g-filings">
+<h2>Real-Time 13D / 13G Filings</h2>
+<p>Track <strong>Schedule 13D and 13G filings</strong> as soon as they are published. These disclosures reveal investors with <strong>5% or more ownership</strong> in a company, including hedge funds, activist investors, and large asset managers.</p>
+<ul>
+<li>Live updates directly from SEC EDGAR</li>
+<li>Identify new 5%+ shareholders in real time</li>
+<li>Monitor activist campaigns and hedge fund moves</li>
+<li>Full historical 13D/13G database by company and filer</li>
+</ul>
+<a class="read-more" href="/13d-filings">Browse Live 13D Filings</a> and <a class="read-more" href="/13g-filings">Browse Live 13G Filings</a></section>
+<!-- Why Choose Us -->
+<section id="why-choose">
+<h2>Why Use SECForm4.com?</h2>
+<ul>
+<li>Real-time insider Form 4 updates</li>
+<li>Institutional holdings and hedge fund activity</li>
+<li>Real-time 13D/13G coverage</li>
+<li>Clean, easy-to-use interface</li>
+<li>Free access with advanced tools for power users</li>
+</ul>
+</section>
+<!-- FAQ -->
+<section id="faq">
+<h2>Frequently Asked Questions</h2>
+<div class="faq-section">
+<div class="faq-item"><button class="faq-question">What is an SEC Form 4 filing?</button>
+<div class="faq-answer">
+<p>Form 4 is filed when corporate insiders trade stock. It provides transparency into executive and director buying or selling activity.</p>
+</div>
+</div>
+<div class="faq-item"><button class="faq-question">What is a 13D or 13G filing?</button>
+<div class="faq-answer">
+<p>These are SEC filings required when an investor acquires 5% or more of a public company's shares. 13D is filed by active investors (such as activists), while 13G is filed by passive investors.</p>
+</div>
+</div>
+<div class="faq-item"><button class="faq-question">What is a 13F filing?</button>
+<div class="faq-answer">
+<p>Form 13F is a quarterly filing by institutional investment managers disclosing stock holdings. We process 13F filings in real time.</p>
+</div>
+</div>
+<div class="faq-item"><button class="faq-question">Can insider trading data predict stock performance?</button>
+<div class="faq-answer">
+<p>Large or unusual insider buying patterns often indicate confidence and can inform investment research.</p>
+</div>
+</div>
+<div class="faq-item"><button class="faq-question">How often is SECForm4.com updated?</button>
+<div class="faq-answer">
+<p>All filings are updated in real time as they are filed with the SEC.</p>
+</div>
+</div>
+</div>
+</section>
+</div>     </div>
+
+        
+                                        </div>
+            </main>
+            
+        </div>
+
+        
+        
+            </div>
+
+            <footer class="container-footer footer full-width">
+            <div class="grid-child">
+                <ul class="mod-menu mod-list nav ">
+<li class="nav-item item-127"><a href="/site/about-us" >About Us</a></li><li class="nav-item item-128"><a href="/site/products" >Products</a></li><li class="nav-item item-129"><a href="/site/terms-of-use" >Terms of Use</a></li><li class="nav-item item-130"><a href="/site/privacy-statement" >Privacy Statement</a></li><li class="nav-item item-131"><a href="/site/contact" >Contact</a></li><li class="nav-item item-132"><a href="/sitemaps" >Sitemaps</a></li></ul>
+
+            </div>
+        </footer>
+    
+    
+    
+</body>
+
+</html>

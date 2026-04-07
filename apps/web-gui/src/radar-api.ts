@@ -3,6 +3,7 @@
  */
 
 import { api } from './api';
+import * as MainAPI from './api';
 
 // ─── Types ───
 export interface WatchlistItem {
@@ -82,6 +83,18 @@ export interface InstitutionHolding {
   reportDate: string;
 }
 
+export interface PoliticianTrade {
+  id: string;
+  ticker: string;
+  politicianName: string;
+  party: string;
+  chamber: string;
+  side: 'BUY' | 'SELL';
+  amountRange: string;
+  transactionDate: string;
+  filingDate: string;
+}
+
 // ─── Watchlist API ───
 export async function fetchWatchlist(): Promise<WatchlistItem[]> {
   const res = await api.get<{ success: boolean; data: WatchlistItem[] }>('/watchlist');
@@ -98,6 +111,28 @@ export async function removeFromWatchlist(ticker: string): Promise<void> {
 }
 
 // ─── Radar API ───
+export interface InsightData {
+  summary: string;
+  alert_level: "info" | "warning" | "danger";
+  key_points: string[];
+}
+
+export interface TimelineData {
+  ticker: string;
+  timeline: any[];
+}
+
+export interface RatioData {
+  supportRatio: number;
+  criticizeRatio: number;
+  neutralRatio: number;
+  postCount: number;
+}
+
+export interface PostData {
+  posts: any[];
+}
+
 export async function fetchRadarFeed(): Promise<RiskSnapshot[]> {
   const res = await api.get<{ success: boolean; data: RiskSnapshot[] }>('/radar/feed');
   return res.data.data;
@@ -123,8 +158,26 @@ export async function fetchTickerInstitutions(ticker: string, force: boolean = f
   return res.data.data;
 }
 
+export async function fetchTickerPoliticians(ticker: string, force: boolean = false): Promise<PoliticianTrade[]> {
+  const res = await api.get<{ success: boolean; data: PoliticianTrade[] }>(`/radar/tickers/${ticker}/politicians${force ? '?force=true' : ''}`);
+  return res.data.data;
+}
+
 export async function fetchPriceHistory(ticker: string): Promise<PriceBar[]> {
   const res = await api.get<{ success: boolean; data: PriceBar[] }>(`/radar/tickers/${ticker}/price-history`);
+  return res.data.data;
+}
+
+export interface FullTickerReport {
+  summary: RiskSnapshot;
+  signals: RiskFactor[];
+  insiders: InsiderTrade[];
+  institutions: InstitutionHolding[];
+  politicians: PoliticianTrade[];
+}
+
+export async function fetchTickerFullReport(ticker: string): Promise<FullTickerReport> {
+  const res = await api.get<{ success: boolean; data: FullTickerReport }>(`/radar/tickers/${ticker}/full-report`);
   return res.data.data;
 }
 
@@ -141,3 +194,30 @@ export async function fetchAlerts(unreadOnly: boolean = false): Promise<AlertIte
 export async function markAlertRead(id: string): Promise<void> {
   await api.patch(`/alerts/${id}/read`);
 }
+
+// ─── RadarAPI Unified Bridge ───
+// This object maps the function names expected by RadarDashboard.tsx
+// to the actual function definitions in api.ts and radar-api.ts.
+
+export const RadarAPI = {
+  getSentimentInsight: MainAPI.fetchSentimentInsight,
+  getSentimentTimeline: MainAPI.fetchSentimentTimeline,
+  getSentimentRatio: MainAPI.fetchSentimentRatio,
+  getTickerPosts: MainAPI.fetchRecentPosts,
+  getMarketInsight: MainAPI.fetchReversalDetails,
+  triggerScrapJob: MainAPI.triggerCrawl,
+  getScrapJobStatus: MainAPI.fetchCrawlJob,
+  getCustomAIAnalysis: MainAPI.fetchIndicatorAnalysis,
+  tossAuthPhone: (name: string, birthday: string, phone: string) => MainAPI.startTossPhoneLogin({ name, birthday, phone }),
+  tossAuthManualClick: MainAPI.confirmTossLogin,
+  getInsiderTrades: fetchTickerInsiders,
+  getInstitutionalHoldings: fetchTickerInstitutions,
+  getPoliticianTrades: fetchTickerPoliticians,
+  getPriceHistory: fetchPriceHistory,
+  getFullReport: fetchTickerFullReport,
+  refreshTicker: refreshTicker,
+  getRadarFeed: fetchRadarFeed,
+  getTickerSummary: fetchTickerSummary,
+  getTickerSignals: fetchTickerSignals,
+  getPortfolio: MainAPI.fetchMyPortfolio
+};

@@ -30,6 +30,10 @@ export interface SummarizeResponse {
   key_points: string[];
 }
 
+export interface IndicatorAnalysisResponse {
+  analysis: string;
+}
+
 /**
  * 단건 분류 요청
  */
@@ -126,6 +130,48 @@ export async function summarizePosts(
     return response.data;
   } catch (err) {
     logger.error(`요약 서비스 요청 실패 (ticker: ${ticker}):`, err);
+    return null;
+  }
+}
+
+/**
+ * 지표 데이터 기반 매크로 분석 요청
+ */
+export async function getIndicatorAnalysis(
+  name: string,
+  description: string,
+  history: number[]
+): Promise<IndicatorAnalysisResponse | null> {
+  try {
+    const response = await axios.post<IndicatorAnalysisResponse>(
+      `${CLASSIFIER_URL}/analyze/indicator`,
+      { name, description, history },
+      { headers: { "Content-Type": "application/json" }, timeout: 30000 }
+    );
+
+    return response.data;
+  } catch (err) {
+    logger.error(`지표 분석 요청 실패 (indicator: ${name}):`, err);
+    return null;
+  }
+}
+
+/**
+ * 시장 전반 상태 기반 통합 전략 분석 요청
+ */
+export async function getMarketUnifiedAnalysis(
+  marketData: any
+): Promise<IndicatorAnalysisResponse | null> {
+  try {
+    const response = await axios.post<IndicatorAnalysisResponse>(
+      `${CLASSIFIER_URL}/analyze/market`,
+      { market_data: marketData },
+      { headers: { "Content-Type": "application/json" }, timeout: 30000 }
+    );
+
+    return response.data;
+  } catch (err) {
+    logger.error(`시장 통합 분석 요청 실패:`, err);
     return null;
   }
 }

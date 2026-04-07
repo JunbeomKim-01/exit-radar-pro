@@ -111,5 +111,31 @@ export async function stockRoutes(app: FastifyInstance) {
     });
     return reply.send({ success: true, data: stocks });
   });
+
+  // GET /stocks/:ticker/politician-trades — 특정 종목의 정치인 거래 내역
+  app.get("/:ticker/politician-trades", async (request, reply) => {
+    const { ticker } = request.params as { ticker: string };
+
+    if (!ticker) {
+      return reply.status(400).send({ success: false, message: "Ticker is required" });
+    }
+
+    try {
+      // @ts-ignore - Prisma 클라이언트 갱신 전까지 타입 무시
+      const trades = await (prisma as any).politicianTrade.findMany({
+        where: { ticker: ticker.toUpperCase() },
+        orderBy: { transactionDate: 'desc' },
+        take: 50
+      });
+
+      return reply.send({
+        success: true,
+        data: trades
+      });
+    } catch (err) {
+      app.log.error({ err }, "Politician trades fetch error");
+      return reply.status(500).send({ success: false, message: "Failed to fetch politician trades" });
+    }
+  });
 }
 

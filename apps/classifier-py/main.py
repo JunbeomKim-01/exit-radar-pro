@@ -91,6 +91,22 @@ class SummarizeResponse(BaseModel):
     key_points: List[str]
 
 
+class IndicatorAnalysisRequest(BaseModel):
+    name: str
+    description: str
+    history: List[float]
+    openai_api_key: Optional[str] = None
+
+
+class IndicatorAnalysisResponse(BaseModel):
+    analysis: str
+
+
+class AnalyzeMarketRequest(BaseModel):
+    market_data: Dict
+    openai_api_key: Optional[str] = None
+
+
 # ─── Endpoints ───
 @app.get("/health")
 async def health():
@@ -188,7 +204,38 @@ async def summarize_posts(req: SummarizeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/analyze/indicator", response_model=IndicatorAnalysisResponse)
+async def analyze_indicator(req: IndicatorAnalysisRequest):
+    """지표 데이터 기반 전문가 분석 생성"""
+    try:
+        result = await classifier.analyze_indicator(
+            name=req.name,
+            description=req.description,
+            history=req.history,
+            user_api_key=req.openai_api_key,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"지표 분석 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze/market", response_model=IndicatorAnalysisResponse)
+async def analyze_market(req: AnalyzeMarketRequest):
+    """시장 전체 상태 기반 마스터 전략 생성"""
+    try:
+        result = await classifier.analyze_market_unified(
+            market_data=req.market_data,
+            user_api_key=req.openai_api_key,
+        )
+        return result
+    except Exception as e:
+        logger.error(f"시장 통합 분석 오류: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     port = int(os.getenv("CLASSIFIER_PORT", "8001"))
-    logger.info(f"🐍 분류 서비스 시작: http://localhost:{port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    logger.info(f"🐍 분류 서비스 시작: http://localhost:{port} (Reload Enabled)")
+    # reload=True 기능을 위해 문자열 형태의 앱 경로 전달
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

@@ -2,21 +2,36 @@
  * TrendReversalTab — 전환 지표 탭
  * 
  * 시장 전환 위험/기회를 정량적으로 보여주는 대시보드.
- * VXN, HY OAS, DGS2, SOX 핵심 4개 + VIX, DXY, WTI, Volume 보조 4개 지표
+ * 전략 중심(Strategic Action) UI와 인터랙티브 상세 분석 패널 제공.
  */
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  RefreshCw, AlertTriangle, TrendingUp, TrendingDown,
-  Activity, Shield, Zap, BarChart2, DollarSign, Droplets,
-  Cpu, ArrowUpCircle, ArrowDownCircle, Eye, AlertCircle, CheckCircle2
+  RefreshCw, AlertTriangle, TrendingUp,
+  Activity, ArrowUpCircle, ArrowDownCircle, Eye, AlertCircle, CheckCircle2,
+  Info, Sparkles, Zap
 } from 'lucide-react';
 import {
   fetchReversalSummary, fetchReversalDetails,
-  fetchReversalCases, triggerReversalRefresh
+  triggerReversalRefresh, fetchIndicatorAnalysis,
+  fetchMarketUnifiedOpinion
 } from '../api';
 import { TradingViewChart } from './TradingViewChart';
+
+// ─── Constants ───
+
+export const INDICATOR_EXPLANATIONS: Record<string, string> = {
+  'VXN': '나스닥 100 변동성 지수입니다. 지수가 급등 후 꺾이는 지점이 시장의 단기 바닥인 경우가 많습니다.',
+  'HY OAS': '투기 등급 채권의 가산 금리입니다. 이 수치가 낮아지면 시장의 공포가 줄어들고 위험 자산 선호가 강해집니다.',
+  'DGS2': '미국채 2년물 금리입니다. 연준의 정책 금리 기대를 반영하며, 금리 안정화는 성장주에 긍정적입니다.',
+  'Yield Curve': '장단기 금리차(10Y-2Y)입니다. 역전됐던 금리차가 정상화되는 과정은 역사적으로 경기 침체의 전조로 해석됩니다.',
+  'SOX': '필라델피아 반도체 지수의 상대 강도입니다. 반도체가 시장을 주도할 때 나스닥의 반등 탄력이 강해집니다.',
+  'VIX': 'S&P 500 공포 지수입니다. 30 이상의 과매도 구간에서 하락세가 진정될 때 반등 신호로 작동합니다.',
+  'DXY': '달러 인덱스입니다. 달러 약세는 신흥국 및 기술주 시장의 유동성을 공급하는 호재입니다.',
+  'WTI': '국제 유가입니다. 유가 하락은 인플레이션 압력을 낮추어 금리 인하 기대감을 높입니다.',
+  '거래량': '나스닥 거래량입니다. 하락 끝단에서 거래량이 폭발하는 것은 투매(Climax) 이후의 바닥 신호일 수 있습니다.'
+};
 
 // ─── Types ───
 
@@ -38,6 +53,11 @@ interface ReversalSummary {
   confidence: number;
   explanation: string;
   riskTheme: string;
+  strategicAction: {
+    short: string;
+    long: string;
+    color: string;
+  };
   dominantDrivers: string[];
   updatedAt: string;
 }
@@ -51,16 +71,7 @@ interface ReversalDetails {
   chartData: any[];
 }
 
-interface ReversalCase {
-  date: string;
-  signalType: string;
-  score: number;
-  stage: string;
-  return5d: number;
-  return10d: number;
-  return20d: number;
-  explanation: string;
-}
+// INDICATOR_EXPLANATIONS MOVED TO TOP FOR EXPORT
 
 // ─── Stage Badge ───
 
@@ -87,11 +98,11 @@ function StageBadge({ stage }: { stage: string }) {
 
 // ─── Sparkline ───
 
-function Sparkline({ data, color }: { data: number[], color: string }) {
+function Sparkline({ data, color, height = 24 }: { data: number[], color: string, height?: number }) {
   if (!data || data.length === 0) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);
-  const range = max - min || 1;
+  const range = (max - min) || 1;
   const points = data.map((val, i) => {
     const x = (i / (data.length - 1)) * 100;
     const y = 100 - ((val - min) / range) * 100;
@@ -99,11 +110,11 @@ function Sparkline({ data, color }: { data: number[], color: string }) {
   }).join(' ');
 
   return (
-    <svg width="100%" height="24" viewBox="0 -5 100 110" preserveAspectRatio="none" style={{ marginTop: '4px', opacity: 0.8 }}>
+    <svg width="100%" height={height} viewBox="0 -5 100 110" preserveAspectRatio="none" style={{ marginTop: '4px', opacity: 0.8 }}>
        <polyline
          fill="none"
          stroke={color}
-         strokeWidth="4"
+         strokeWidth="2"
          strokeLinecap="round"
          strokeLinejoin="round"
          points={points}
@@ -114,7 +125,7 @@ function Sparkline({ data, color }: { data: number[], color: string }) {
 
 // ─── Signal Card ───
 
-function SignalCard({ signal, isCore, chartData }: { signal: SignalBreakdown; isCore: boolean; chartData?: number[] }) {
+export function SignalCard({ signal, chartData, active, onClick }: { signal: SignalBreakdown; chartData?: number[]; active?: boolean; onClick: () => void }) {
   const fillPercent = signal.maxScore > 0 ? (signal.score / signal.maxScore) * 100 : 0;
   const barColor = signal.triggered 
     ? (fillPercent > 70 ? 'var(--accent-down)' : fillPercent > 40 ? '#fbbf24' : 'var(--accent-brand)')
@@ -124,23 +135,35 @@ function SignalCard({ signal, isCore, chartData }: { signal: SignalBreakdown; is
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
+      whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.03)' }}
+      onClick={onClick}
       style={{
-        background: 'var(--bg-card)',
-        border: `1px solid ${signal.triggered ? barColor + '44' : 'var(--border-color)'}`,
+        background: active ? 'rgba(255,255,255,0.05)' : 'var(--bg-card)',
+        border: `1px solid ${active ? 'var(--accent-brand)' : (signal.triggered ? barColor + '44' : 'var(--border-color)')}`,
         borderRadius: '8px',
         padding: '12px',
         display: 'flex',
         flexDirection: 'column',
         gap: '8px',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '11px', fontWeight: 800, color: signal.triggered ? 'var(--text-active)' : 'var(--text-muted)', textTransform: 'uppercase' }}>
-          {signal.name}
-        </span>
-        <span className="nums" style={{ fontSize: '14px', fontWeight: 900, color: barColor }}>
-          {signal.score}/{signal.maxScore}
-        </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+            {signal.name}
+          </span>
+          <span className="nums" style={{ fontSize: '18px', fontWeight: 900, color: signal.triggered ? barColor : 'var(--text-active)' }}>
+            {signal.description?.match(/[-+]?\d*\.?\d+[%x]?/)?.[0] || '--'}
+          </span>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '12px', fontWeight: 900, color: barColor }}>
+            {signal.score}<span style={{ fontSize: '9px', opacity: 0.6 }}>/{signal.maxScore}</span>
+          </div>
+          {signal.triggered && <div style={{ fontSize: '8px', fontWeight: 900, color: 'var(--accent-down)', marginTop: '2px' }}>TRIGGERED</div>}
+        </div>
       </div>
       
       {/* Score bar */}
@@ -153,10 +176,6 @@ function SignalCard({ signal, isCore, chartData }: { signal: SignalBreakdown; is
         />
       </div>
 
-      <p style={{ fontSize: '10px', color: 'var(--text-muted)', lineHeight: 1.4, margin: 0 }}>
-        {signal.description}
-      </p>
-
       {chartData && chartData.length > 0 && (
         <Sparkline data={chartData} color={barColor} />
       )}
@@ -166,37 +185,200 @@ function SignalCard({ signal, isCore, chartData }: { signal: SignalBreakdown; is
 
 // ─── Main Component ───
 
+export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnalysis, chartData }: { selectedSignal: any, aiAnalysis: string | null, fetchingAnalysis: boolean, chartData: any[] }) {
+  if (!selectedSignal) {
+    return (
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '14px', fontWeight: 800 }}>
+        ← 분석하고자 하는 지표를 선택하세요
+      </div>
+    );
+  }
+
+  return (
+    <motion.div
+      key={selectedSignal.name}
+      initial={{ opacity: 0, x: 20 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: -20 }}
+      style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}
+    >
+      <header>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px' }}>DEEP_DIVE_ANALYTICS</div>
+        <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {selectedSignal.name}
+          {selectedSignal.triggered && <AlertTriangle size={24} color="var(--accent-down)" />}
+        </h2>
+        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.6, display: 'flex', gap: '12px' }}>
+          <Info size={16} style={{ flexShrink: 0, marginTop: '2px' }} color="var(--accent-brand)" />
+          {INDICATOR_EXPLANATIONS[selectedSignal.name.split(' ')[0]] || INDICATOR_EXPLANATIONS[selectedSignal.name] || '지표 상세 설명이 준비 중입니다.'}
+        </div>
+      </header>
+
+      {/* 🤖 AI Analyst Insight Section */}
+      <div style={{
+        marginTop: '8px',
+        padding: '24px',
+        background: 'linear-gradient(135deg, rgba(93,92,222,0.1) 0%, rgba(0,0,0,0.1) 100%)',
+        borderRadius: '16px',
+        border: '1px solid rgba(93,92,222,0.3)',
+        boxShadow: '0 8px 32px 0 rgba(0,0,0,0.2)',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <Sparkles size={18} color="#A78BFA" />
+          <span style={{ fontSize: '13px', fontWeight: 900, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            AI Macro Analyst Briefing
+          </span>
+        </div>
+
+        {fetchingAnalysis ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div className="shimmer" style={{ height: '14px', width: '100%', borderRadius: '4px' }} />
+            <div className="shimmer" style={{ height: '14px', width: '85%', borderRadius: '4px' }} />
+            <div className="shimmer" style={{ height: '14px', width: '92%', borderRadius: '4px' }} />
+          </div>
+        ) : aiAnalysis ? (
+          <div style={{ 
+            color: '#E5E7EB', 
+            fontSize: '14px', 
+            lineHeight: '1.8', 
+            fontWeight: 500,
+            whiteSpace: 'pre-wrap',
+            letterSpacing: '-0.01em'
+          }}>
+            {aiAnalysis}
+          </div>
+        ) : (
+          <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontStyle: 'italic' }}>
+            이 지표에 대한 새로운 분석을 생성하는 중입니다...
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: '20px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', height: selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? '400px' : 'auto' }}>
+        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '12px' }}>{selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? 'REALTIME_MACRO_FLOW' : '60D_TREND_VISUALIZATION'}</div>
+        {selectedSignal.name.toUpperCase().includes('YIELD CURVE') || selectedSignal.name.includes('금리 커브') ? (
+          <TradingViewChart ticker="YIELD CURVE" companyName="Yield Curve" />
+        ) : (
+          <Sparkline data={chartData} color="var(--accent-brand)" height={100} />
+        )}
+      </div>
+
+      <div style={{ padding: '20px', background: selectedSignal.triggered ? 'rgba(239,68,68,0.05)' : 'rgba(14,203,129,0.05)', borderRadius: '12px', border: `1px solid ${selectedSignal.triggered ? 'var(--accent-down)44' : 'var(--accent-up)44'}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 800 }}>CURRENT_SIGNAL_STATUS</span>
+          <span style={{ fontSize: '10px', fontWeight: 900, padding: '4px 8px', background: selectedSignal.triggered ? 'var(--accent-down)' : 'var(--accent-up)', color: '#000', borderRadius: '4px' }}>
+            {selectedSignal.triggered ? 'CRITICAL_BREACH' : 'RANGE_STABLE'}
+          </span>
+        </div>
+        <p className="nums" style={{ fontSize: '24px', fontWeight: 900, color: '#fff', margin: '8px 0' }}>{selectedSignal.description}</p>
+        
+        <div style={{ marginTop: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '8px' }}>
+            <span style={{ color: 'var(--text-muted)' }}>SCORE_CONTRIBUTION</span>
+            <span style={{ color: '#fff', fontWeight: 900 }}>{selectedSignal.score} / {selectedSignal.maxScore}</span>
+          </div>
+          <div style={{ height: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '3px', overflow: 'hidden' }}>
+            <div style={{ width: `${(selectedSignal.score / selectedSignal.maxScore) * 100}%`, height: '100%', background: 'var(--accent-brand)' }} />
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export function TrendReversalTab() {
   const [summary, setSummary] = useState<ReversalSummary | null>(null);
   const [details, setDetails] = useState<ReversalDetails | null>(null);
-  const [cases, setCases] = useState<ReversalCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedSignalName, setSelectedSignalName] = useState<string | null>(null);
+  
+  // AI Analyst States
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [fetchingAnalysis, setFetchingAnalysis] = useState(false);
+  const [analysisCache, setAnalysisCache] = useState<Record<string, string>>({});
+
+  // Unified AI States
+  const [unifiedAnalysis, setUnifiedAnalysis] = useState<string | null>(null);
+  const [fetchingUnified, setFetchingUnified] = useState(false);
+  const [isBriefingExpanded, setIsBriefingExpanded] = useState(false);
 
   const loadData = async () => {
     try {
-      const [s, d, c] = await Promise.all([
+      const [s, d] = await Promise.all([
         fetchReversalSummary().catch(() => null),
         fetchReversalDetails().catch(() => null),
-        fetchReversalCases(undefined, 10).catch(() => []),
       ]);
       setSummary(s);
       setDetails(d);
-      setCases(c || []);
+      
+      // Default selection
+      if (d && !selectedSignalName) {
+        setSelectedSignalName(d.signal.coreSignals[0].name);
+      }
     } catch (err) {
-      console.error('Reversal data load error:', err);
+      console.error('Data load error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  const loadUnified = async () => {
+    setFetchingUnified(true);
+    try {
+      const res = await fetchMarketUnifiedOpinion();
+      if (res) setUnifiedAnalysis(res.analysis);
+    } catch (err) {
+      console.error('Unified analysis error:', err);
+    } finally {
+      setFetchingUnified(false);
+    }
+  };
+
+  useEffect(() => { 
+    loadData();
+    loadUnified();
+  }, []);
+
+  // Fetch AI Analysis when signal selection changes
+  useEffect(() => {
+    if (!selectedSignalName) return;
+    
+    // Check cache first
+    if (analysisCache[selectedSignalName]) {
+      setAiAnalysis(analysisCache[selectedSignalName]);
+      return;
+    }
+
+    const getAnalysis = async () => {
+      setFetchingAnalysis(true);
+      setAiAnalysis(null);
+      try {
+        // Strip out emojis or extra text for the API search
+        const cleanName = selectedSignalName.split(' ')[0];
+        const res = await fetchIndicatorAnalysis(cleanName);
+        if (res && res.analysis) {
+          setAiAnalysis(res.analysis);
+          setAnalysisCache(prev => ({ ...prev, [selectedSignalName]: res.analysis }));
+        }
+      } catch (err) {
+        console.error('AI Analysis fetch error:', err);
+      } finally {
+        setFetchingAnalysis(false);
+      }
+    };
+
+    getAnalysis();
+  }, [selectedSignalName]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       await triggerReversalRefresh();
-      await loadData();
+      await Promise.all([loadData(), loadUnified()]);
+      setAnalysisCache({}); // Clear cache on refresh
     } catch (err) {
       console.error('Refresh error:', err);
     } finally {
@@ -213,317 +395,248 @@ export function TrendReversalTab() {
   }
 
   // ─── No Data State ───
-  if (!summary) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-        <Activity size={48} style={{ opacity: 0.2 }} color="var(--text-muted)" />
-        <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>전환 지표 데이터가 없습니다.</p>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={handleRefresh}
-          disabled={refreshing}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '8px',
-            background: 'var(--accent-brand)', color: 'var(--bg-dark)',
-            border: 'none', borderRadius: '8px', padding: '10px 20px',
-            fontSize: '13px', fontWeight: 800, cursor: 'pointer',
-          }}
-        >
-          <RefreshCw size={14} className={refreshing ? 'spin' : ''} />
-          {refreshing ? '분석 중...' : '시장 데이터 수집 & 분석'}
-        </motion.button>
-      </div>
-    );
-  }
+  if (!summary) return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
+      <Activity size={48} style={{ opacity: 0.2 }} color="var(--text-muted)" />
+      <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>전환 지표 데이터가 없습니다.</p>
+      <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'var(--accent-brand)', color: 'var(--bg-dark)', border: 'none', padding: '12px 24px', borderRadius: '8px', fontWeight: 800, cursor: 'pointer' }}>
+         <RefreshCw size={14} className={refreshing ? 'spin' : ''} /> 시장 데이터 분석 시작
+      </button>
+    </div>
+  );
 
   const isTopCandidate = summary.signalType === 'TOP_CANDIDATE';
-  const stageColor = summary.stage === 'CONFIRMED' ? '#ef4444' : summary.stage === 'WARN' ? '#fbbf24' : '#60a5fa';
 
   const getChartData = (name: string, bars: any[]) => {
     if (!bars || bars.length === 0) return [];
-    if (name.includes('VXN')) return bars.map(b => b.vxnClose);
-    if (name.includes('HY OAS')) return bars.map(b => b.hyOas);
-    if (name.includes('DGS2')) return bars.map(b => b.dgs2);
-    if (name.includes('SOX')) return bars.map(b => b.soxClose);
-    if (name.includes('VIX')) return bars.map(b => b.vixClose);
-    if (name.includes('DXY')) return bars.map(b => b.dxyClose);
-    if (name.includes('WTI')) return bars.map(b => b.wtiClose);
-    if (name.includes('거래량')) return bars.map(b => b.nasdaqVol);
+    const n = name.toUpperCase();
+    if (n.includes('VXN')) return bars.map(b => b.vxnClose);
+    if (n.includes('HY OAS')) return bars.map(b => b.hyOas);
+    if (n.includes('DGS2')) return bars.map(b => b.dgs2);
+    if (n.includes('YIELD CURVE')) return bars.map(b => b.yieldCurve);
+    if (n.includes('SOX')) return bars.map(b => b.soxClose);
+    if (n.includes('VIX')) return bars.map(b => b.vixClose);
+    if (n.includes('DXY')) return bars.map(b => b.dxyClose);
+    if (n.includes('WTI')) return bars.map(b => b.wtiClose);
+    if (n.includes('거래량')) return bars.map(b => b.nasdaqVol);
     return [];
   };
 
-  // ─── Render ───
+  const selectedSignal = [...(details?.signal.coreSignals || []), ...(details?.signal.supportSignals || [])]
+    .find(s => s.name === selectedSignalName);
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg-panel)', position: 'relative' }}>
       
-      {/* ─── A. Header Summary Card ─── */}
-      <div className="terminal-header" style={{ 
-        padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        borderBottom: `2px solid ${stageColor}33`,
-        background: `linear-gradient(135deg, rgba(0,0,0,0.3), ${stageColor}08)`,
+      {/* 🔄 Local Progress Bar */}
+      {(loading || refreshing) && (
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'rgba(255,255,255,0.05)', zIndex: 110 }}>
+           <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ height: '100%', background: 'var(--accent-brand)', boxShadow: '0 0 12px var(--accent-brand)' }} />
+        </div>
+      )}
+
+      {/* 🔄 Refreshing Overlay */}
+      <AnimatePresence>
+        {refreshing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ 
+              position: 'absolute', 
+              inset: 0, 
+              background: 'rgba(10,12,18,0.4)', 
+              backdropFilter: 'blur(4px)', 
+              zIndex: 100, 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: '16px'
+            }}
+          >
+            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}>
+              <RefreshCw size={32} color="var(--accent-brand)" />
+            </motion.div>
+            <div style={{ color: 'var(--accent-brand)', fontSize: '13px', fontWeight: 900, letterSpacing: '0.1em' }}>REFRESHING_MARKET_SIGNALS...</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ─── A. Strategic Action Banner (Responsive) ─── */}
+      <div style={{ 
+        padding: window.innerWidth > 1024 ? '24px 32px' : '20px', 
+        background: `linear-gradient(90deg, rgba(0,0,0,0.4) 0%, ${summary.strategicAction.color}15 100%)`,
+        borderBottom: `1px solid ${summary.strategicAction.color}33`,
+        display: 'flex',
+        flexDirection: window.innerWidth > 1024 ? 'row' : 'column',
+        justifyContent: 'space-between',
+        alignItems: window.innerWidth > 1024 ? 'center' : 'flex-start',
+        gap: '20px'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth > 1024 ? '24px' : '16px' }}>
           <motion.div
-            animate={{ rotate: isTopCandidate ? [0, -5, 5, 0] : [0, 5, -5, 0] }}
-            transition={{ duration: 2, repeat: Infinity }}
+            animate={{ scale: [1, 1.05, 1] }} 
+            transition={{ duration: 3, repeat: Infinity }}
+            style={{ 
+              width: window.innerWidth > 1024 ? '64px' : '48px', 
+              height: window.innerWidth > 1024 ? '64px' : '48px', 
+              borderRadius: '50%', background: `${summary.strategicAction.color}22`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${summary.strategicAction.color}44`,
+              flexShrink: 0
+            }}
           >
             {isTopCandidate 
-              ? <ArrowDownCircle size={32} color="#ef4444" />
-              : <ArrowUpCircle size={32} color="var(--accent-up)" />
+              ? <ArrowDownCircle size={window.innerWidth > 1024 ? 32 : 24} color={summary.strategicAction.color} />
+              : <ArrowUpCircle size={window.innerWidth > 1024 ? 32 : 24} color={summary.strategicAction.color} />
             }
           </motion.div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '16px', fontWeight: 900, color: '#fff' }}>
-                {isTopCandidate ? '하락 전환 위험' : '상승 전환 기회'}
+          
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
+              <span style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
+                {summary.strategicAction.short}
               </span>
               <StageBadge stage={summary.stage} />
             </div>
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)', maxWidth: '500px' }}>
-              {summary.explanation}
-            </span>
+            <p style={{ fontSize: window.innerWidth > 1024 ? '15px' : '12px', fontWeight: 600, color: 'var(--text-secondary)', margin: 0 }}>
+              {summary.strategicAction.long}
+            </p>
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          {/* Score */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 800 }}>SCORE</span>
-            <span className="nums" style={{ fontSize: '28px', fontWeight: 900, color: stageColor, lineHeight: 1 }}>
-              {summary.score}
-            </span>
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)' }}>/100</span>
-          </div>
-
-          {/* Confidence */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 800 }}>CONFIDENCE</span>
-            <span className="nums" style={{ fontSize: '18px', fontWeight: 800, color: 'var(--text-active)', lineHeight: 1.2 }}>
-              {summary.confidence.toFixed(0)}%
-            </span>
-          </div>
-
-          {/* Refresh */}
-          <motion.button
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={handleRefresh}
-            disabled={refreshing}
-            style={{
-              background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)',
-              borderRadius: '6px', padding: '8px', cursor: 'pointer', color: 'var(--text-muted)',
-            }}
-          >
-            <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-          </motion.button>
-        </div>
-      </div>
-
-      {/* ─── Content Area ─── */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-
-        {/* Core + Support Score Summary */}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ 
-            flex: 1, background: 'var(--bg-card)', borderRadius: '8px', padding: '12px',
-            border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px',
-          }}>
-            <Shield size={18} color={stageColor} />
-            <div>
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 800 }}>핵심 신호 점수</div>
-              <span className="nums" style={{ fontSize: '20px', fontWeight: 900, color: stageColor }}>{summary.coreSignalScore}</span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/75</span>
-            </div>
-          </div>
-          <div style={{ 
-            flex: 1, background: 'var(--bg-card)', borderRadius: '8px', padding: '12px',
-            border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px',
-          }}>
-            <Zap size={18} color="var(--text-muted)" />
-            <div>
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 800 }}>보조 신호 점수</div>
-              <span className="nums" style={{ fontSize: '20px', fontWeight: 900, color: 'var(--text-active)' }}>{summary.supportSignalScore}</span>
-              <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/25</span>
-            </div>
-          </div>
-          <div style={{ 
-            flex: 1, background: 'var(--bg-card)', borderRadius: '8px', padding: '12px',
-            border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '12px',
-          }}>
-            <BarChart2 size={18} color="var(--text-muted)" />
-            <div>
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', fontWeight: 800 }}>주요 테마</div>
-              <span style={{ fontSize: '13px', fontWeight: 800, color: 'var(--text-active)', textTransform: 'uppercase' }}>
-                {summary.riskTheme === 'volatility' ? '🔥 변동성' :
-                 summary.riskTheme === 'credit' ? '💳 신용' :
-                 summary.riskTheme === 'rate' ? '📈 금리' :
-                 summary.riskTheme === 'leadership' ? '🏭 리더십' : '📊 복합'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* ─── A.5 TradingView Chart ─── */}
-        <div style={{ height: '360px', minHeight: '360px', flexShrink: 0, background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)', position: 'relative', overflow: 'hidden' }}>
-          <TradingViewChart ticker="QQQ" companyName="Invesco QQQ (Nasdaq 100)" />
-        </div>
-
-        {/* ─── B. Core Signal Cards ─── */}
-        {details && (
-          <>
-            <div>
-              <h3 style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <AlertTriangle size={14} color={stageColor} /> 핵심 전환 신호
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                {details.signal.coreSignals.map((s, i) => (
-                  <SignalCard 
-                    key={i} 
-                    signal={s} 
-                    isCore={true} 
-                    chartData={getChartData(s.name, details.chartData)}
-                  />
-                ))}
-              </div>
-            </div>
-
-            {/* ─── C. Support Signal Cards ─── */}
-            <div>
-              <h3 style={{ fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Activity size={14} /> 보조 컨텍스트 신호
-              </h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
-                {details.signal.supportSignals.map((s, i) => (
-                  <SignalCard 
-                    key={i} 
-                    signal={s} 
-                    isCore={false} 
-                    chartData={getChartData(s.name, details.chartData)}
-                  />
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* ─── E/F. Cases Table + Action Guide ─── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '12px' }}>
-          
-          {/* Cases Table */}
-          <div style={{ background: 'var(--bg-card)', borderRadius: '8px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', background: 'rgba(0,0,0,0.2)', fontSize: '12px', fontWeight: 800, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <TrendingUp size={14} /> 분석 이력
-            </div>
-            <div style={{ overflowY: 'auto', maxHeight: '240px' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '10px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-color)', textAlign: 'left', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '6px 10px', fontWeight: 800 }}>DATE</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800 }}>SIGNAL</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800 }}>STAGE</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800, textAlign: 'right' }}>SCORE</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800, textAlign: 'right' }}>5D</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800, textAlign: 'right' }}>10D</th>
-                    <th style={{ padding: '6px 4px', fontWeight: 800, textAlign: 'right' }}>20D</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {cases.length === 0 ? (
-                    <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>아직 분석 이력이 없습니다</td></tr>
-                  ) : cases.map((c, i) => (
-                    <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                      <td className="nums" style={{ padding: '6px 10px', color: 'var(--text-muted)' }}>
-                        {new Date(c.date).toLocaleDateString(undefined, { year: '2-digit', month: '2-digit', day: '2-digit' })}
-                      </td>
-                      <td style={{ padding: '6px 4px' }}>
-                        <span style={{ 
-                          fontSize: '9px', fontWeight: 800, padding: '2px 6px', borderRadius: '3px',
-                          background: c.signalType === 'TOP_CANDIDATE' ? 'rgba(239,68,68,0.1)' : 'rgba(14,203,129,0.1)',
-                          color: c.signalType === 'TOP_CANDIDATE' ? '#ef4444' : 'var(--accent-up)',
-                        }}>
-                          {c.signalType === 'TOP_CANDIDATE' ? 'TOP' : 'BTM'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '6px 4px', fontSize: '9px', fontWeight: 700, color: 'var(--text-muted)' }}>{c.stage}</td>
-                      <td className="nums" style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 800, color: 'var(--text-active)' }}>{c.score}</td>
-                      <td className="nums" style={{ padding: '6px 4px', textAlign: 'right', color: c.return5d >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{c.return5d.toFixed(1)}%</td>
-                      <td className="nums" style={{ padding: '6px 4px', textAlign: 'right', color: c.return10d >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{c.return10d.toFixed(1)}%</td>
-                      <td className="nums" style={{ padding: '6px 4px', textAlign: 'right', color: c.return20d >= 0 ? 'var(--accent-up)' : 'var(--accent-down)' }}>{c.return20d.toFixed(1)}%</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Action Guide */}
-          <div style={{ background: 'var(--bg-card)', borderRadius: '8px', border: `1px solid ${stageColor}33`, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', background: `${stageColor}11`, fontSize: '12px', fontWeight: 800, color: stageColor, display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Shield size={14} /> 행동 가이드
-            </div>
-            <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {isTopCandidate ? (
-                <>
-                  <ActionItem level={summary.stage} text="공격적 신규 진입보다 익절/현금 비중 관리 우선" />
-                  <ActionItem level="INFO" text="개별 종목 EXIT 신호와 함께 교차 확인 필요" />
-                  {summary.stage === 'CONFIRMED' && (
-                    <ActionItem level="DANGER" text="확인된 전환 단계: 비중 축소를 적극 검토하세요" />
-                  )}
-                  {summary.stage === 'WARN' && (
-                    <ActionItem level="WARN" text="경고 단계: 신규 매수를 자제하고 기존 포지션 점검" />
-                  )}
-                </>
-              ) : (
-                <>
-                  <ActionItem level={summary.stage} text="바닥 확인 후 점진적 비중 확대 검토" />
-                  <ActionItem level="INFO" text="섹터별 선도 종목 우선 검토" />
-                  {summary.stage === 'CONFIRMED' && (
-                    <ActionItem level="OK" text="전환 확인: 분할 매수를 적극 검토하세요" />
-                  )}
-                </>
-              )}
-              
-              {/* Dominant Drivers */}
-              <div style={{ marginTop: '8px', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '6px' }}>
-                <div style={{ fontSize: '9px', fontWeight: 800, color: 'var(--text-muted)', marginBottom: '6px' }}>주요 원인</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                  {summary.dominantDrivers.map((d, i) => (
-                    <span key={i} style={{
-                      fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '4px',
-                      background: `${stageColor}15`, color: stageColor, border: `1px solid ${stageColor}33`,
-                    }}>
-                      {d}
-                    </span>
-                  ))}
+        <div style={{ width: window.innerWidth > 1024 ? 'auto' : '100%', textAlign: 'right', display: 'flex', justifyContent: 'space-between', gap: '32px', borderTop: window.innerWidth > 1024 ? 'none' : '1px solid rgba(255,255,255,0.05)', paddingTop: window.innerWidth > 1024 ? '0' : '12px' }}>
+             <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>SIGNAL_STRENGTH</div>
+                <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: summary.strategicAction.color }}>
+                  {summary.score}<span style={{ fontSize: '14px', opacity: 0.5 }}>/100</span>
                 </div>
-              </div>
-
-              {/* Last Updated */}
-              <div style={{ fontSize: '9px', color: 'var(--text-muted)', textAlign: 'right', marginTop: '4px' }}>
-                Last: {new Date(summary.updatedAt).toLocaleString()}
-              </div>
-            </div>
-          </div>
+             </div>
+             <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>CONFIDENCE</div>
+                <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: '#fff' }}>
+                  {summary.confidence.toFixed(0)}<span style={{ fontSize: '14px', opacity: 0.5 }}>%</span>
+                </div>
+             </div>
+             <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <RefreshCw size={20} className={refreshing ? 'spin' : ''} />
+             </button>
         </div>
       </div>
-    </div>
-  );
-}
 
-function ActionItem({ level, text }: { level: string; text: string }) {
-  const colors: Record<string, string> = {
-    CONFIRMED: '#ef4444', DANGER: '#ef4444',
-    WARN: '#fbbf24', OBSERVE: '#60a5fa',
-    INFO: 'var(--text-muted)', OK: 'var(--accent-up)',
-  };
-  const color = colors[level] || 'var(--text-muted)';
-  
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-      <div style={{ width: '4px', height: '4px', borderRadius: '50%', background: color, marginTop: '6px', flexShrink: 0 }} />
-      <span>{text}</span>
+      <div style={{ flex: 1, display: 'flex', flexDirection: window.innerWidth > 1024 ? 'row' : 'column', minHeight: 0, overflowY: window.innerWidth > 1024 ? 'hidden' : 'auto' }}>
+        
+        {/* LEFT: MAIN CONTENT */}
+        <div style={{ flex: 1.6, overflowY: window.innerWidth > 1024 ? 'auto' : 'visible', padding: window.innerWidth > 1024 ? '24px' : '16px', display: 'flex', flexDirection: 'column', gap: '24px', borderRight: window.innerWidth > 1024 ? '1px solid var(--border-color)' : 'none' }}>
+          
+          {/* 🤖 Unified AI Master Strategy Section - MOVED INSIDE SCROLLABLE AREA */}
+          <div style={{
+               padding: '24px',
+               background: 'linear-gradient(135deg, rgba(93,92,222,0.18) 0%, rgba(139,92,246,0.05) 100%)',
+               borderRadius: '24px',
+               border: '1px solid rgba(139,92,246,0.3)',
+               boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+               position: 'relative',
+               overflow: 'hidden'
+             }}>
+               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                   <div style={{ padding: '8px', background: 'rgba(139,92,246,0.2)', borderRadius: '12px' }}>
+                     <Zap size={20} color="#A78BFA" />
+                   </div>
+                   <div>
+                     <h2 style={{ fontSize: '15px', fontWeight: 900, color: '#A78BFA', letterSpacing: '0.05em', margin: 0 }}>
+                       AI MASTER STRATEGY BRIEFING
+                     </h2>
+                   </div>
+                 </div>
+                 {window.innerWidth <= 1024 && (
+                   <button onClick={() => setIsBriefingExpanded(!isBriefingExpanded)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '6px 12px', borderRadius: '8px' }}>
+                     {isBriefingExpanded ? 'COLLAPSE' : 'EXPAND'}
+                   </button>
+                 )}
+               </div>
+
+               <div style={{ 
+                 maxHeight: (window.innerWidth <= 1024 && !isBriefingExpanded) ? '80px' : 'none',
+                 overflow: 'hidden',
+                 position: 'relative'
+               }}>
+                 {fetchingUnified ? (
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                     <div className="shimmer" style={{ height: '16px', width: '100%', borderRadius: '4px' }} />
+                     <div className="shimmer" style={{ height: '16px', width: '92%', borderRadius: '4px' }} />
+                   </div>
+                 ) : unifiedAnalysis ? (
+                   <div style={{ color: '#fff', fontSize: '15px', lineHeight: '1.8', fontWeight: 600, whiteSpace: 'pre-wrap', letterSpacing: '-0.01em' }}>
+                     {unifiedAnalysis}
+                   </div>
+                 ) : (
+                   <div style={{ color: 'var(--text-muted)', fontSize: '14px', fontStyle: 'italic' }}>분석 지침을 생성 중...</div>
+                 )}
+                 {window.innerWidth <= 1024 && !isBriefingExpanded && (
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '40px', background: 'linear-gradient(transparent, rgba(20,20,30,0.8))' }} />
+                 )}
+               </div>
+           </div>
+          
+          {/* Main Chart */}
+          <section>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
+               <h3 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                 <TrendingUp size={16} color="var(--accent-brand)" /> MARKET_BENCHMARK (QQQ)
+               </h3>
+               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{summary.explanation}</span>
+            </div>
+            <div style={{ height: '360px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+              <TradingViewChart ticker="QQQ" companyName="Nasdaq 100" />
+            </div>
+          </section>
+
+          {/* Indicator Grid */}
+          <section>
+            <h3 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
+              MACRO_SIGNAL_RADAR
+              {window.innerWidth <= 1024 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>SWIPE_TO_EXPLORE →</span>}
+            </h3>
+            <div 
+              className={window.innerWidth <= 1024 ? "mobile-scroll-container" : ""}
+              style={{ 
+                display: window.innerWidth <= 1024 ? 'flex' : 'grid', 
+                gridTemplateColumns: window.innerWidth <= 1024 ? 'none' : 'repeat(auto-fill, minmax(180px, 1fr))', 
+                gap: '12px',
+                overflowX: window.innerWidth <= 1024 ? 'auto' : 'visible',
+                paddingBottom: window.innerWidth <= 1024 ? '12px' : '0'
+              }}
+            >
+              {[...(details?.signal.coreSignals || []), ...(details?.signal.supportSignals || [])].map((s, i) => (
+                <motion.div 
+                  key={i} 
+                  animate={refreshing ? { opacity: 0.3 } : { opacity: 1 }}
+                  style={{ minWidth: window.innerWidth <= 1024 ? '180px' : 'auto', flexShrink: 0 }}
+                >
+                   <SignalCard 
+                     signal={s} 
+                     chartData={getChartData(s.name, details?.chartData || [])}
+                     active={selectedSignalName === s.name}
+                     onClick={() => setSelectedSignalName(s.name)}
+                   />
+                </motion.div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        {/* RIGHT: DEEP ANALYSIS PANEL */}
+        <div style={{ flex: 1, padding: window.innerWidth > 1024 ? '24px' : '16px', overflowY: window.innerWidth > 1024 ? 'auto' : 'visible', background: 'rgba(0,0,0,0.1)', borderTop: window.innerWidth > 1024 ? 'none' : '1px solid var(--border-color)', paddingBottom: '100px' }}>
+           <ReversalDetailsPanel 
+             selectedSignal={selectedSignal}
+             aiAnalysis={aiAnalysis}
+             fetchingAnalysis={fetchingAnalysis}
+             chartData={getChartData(selectedSignal?.name || '', details?.chartData || [])}
+           />
+        </div>
+      </div>
     </div>
   );
 }
