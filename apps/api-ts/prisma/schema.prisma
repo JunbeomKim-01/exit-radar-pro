@@ -108,6 +108,7 @@ model CrawlJob {
   postCount   Int       @default(0) @map("post_count")
   startedAt   DateTime  @default(now()) @map("started_at")
   completedAt DateTime? @map("completed_at")
+  isUpToDate  Boolean   @default(false) @map("is_up_to_date")
   error       String?
 
   @@index([status])

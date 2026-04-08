@@ -150,9 +150,10 @@ export async function crawlRoutes(app: FastifyInstance) {
 
   // POST /crawl/save — 수집된 게시글 저장 (scraper에서 호출)
   app.post("/save", async (request, reply) => {
-    const { jobId, posts, isLastChunk } = request.body as {
+    const { jobId, posts, isLastChunk, isUpToDate } = request.body as {
       jobId?: string;
       isLastChunk?: boolean;
+      isUpToDate?: boolean;
       posts: Array<{
         postId: string;
         title: string;
@@ -238,9 +239,10 @@ export async function crawlRoutes(app: FastifyInstance) {
         const updatedJob = await prisma.crawlJob.update({
           where: { id: jobId },
           data: {
-            status: isLastChunk ? "completed" : "running",
+            status: (isLastChunk || isUpToDate) ? "completed" : "running",
             postCount: { increment: savedCount },
-            completedAt: isLastChunk ? new Date() : undefined,
+            completedAt: (isLastChunk || isUpToDate) ? new Date() : undefined,
+            isUpToDate: isUpToDate || undefined,
           },
         });
 

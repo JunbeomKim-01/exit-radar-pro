@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  X, Sparkles, ShieldAlert, 
+  X, Sparkles, ShieldAlert, CheckCircle,
   MessageSquare, Play, BarChart3, ChevronRight, RefreshCw,
   ChevronDown, ChevronUp, Cpu
 } from 'lucide-react';
@@ -23,7 +23,8 @@ export function TickerHub({ ticker, onClose }: TickerHubProps) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<any>(null);
   const [activeWhaleTab, setActiveWhaleTab] = useState<'insider' | 'politician' | 'institution'>('insider');
-  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'completed'>('idle');
+  const [scanStatus, setScanStatus] = useState<'idle' | 'scanning' | 'completed' | 'up_to_date'>('idle');
+  const [scrapedCount, setScrapedCount] = useState(0);
 
   const loadAll = async () => {
     setLoading(true);
@@ -51,6 +52,7 @@ export function TickerHub({ ticker, onClose }: TickerHubProps) {
 
   const handleRunScan = async () => {
     setScanStatus('scanning');
+    setScrapedCount(0);
     try {
       const crawlRes = await triggerCrawl(ticker);
       const jobId = crawlRes.jobId;
@@ -62,8 +64,21 @@ export function TickerHub({ ticker, onClose }: TickerHubProps) {
 
       while (!isDone && (Date.now() - startTime < MAX_WAIT)) {
         const job = await fetchCrawlJob(jobId);
+        
+        if (job.postCount !== undefined) {
+          setScrapedCount(job.postCount);
+        }
+
         if (job.status === 'completed') {
           isDone = true;
+          
+          // CRITICAL: Precision Redundancy Detection
+          // Use the flag sent by the scraper (consecutive 0-collection)
+          if (job.isUpToDate) {
+            setScanStatus('up_to_date');
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            return;
+          }
         } else if (job.status === 'failed') {
           throw new Error(job.error || 'Crawl failed');
         } else {
@@ -213,42 +228,70 @@ export function TickerHub({ ticker, onClose }: TickerHubProps) {
                     animate={{ opacity: 1 }} 
                     exit={{ opacity: 0 }}
                     style={{ 
-                      position: 'absolute', inset: -10, zIndex: 100, 
-                      background: 'rgba(10, 11, 14, 0.9)', backdropFilter: 'blur(12px)',
+                      position: 'fixed', inset: 0, zIndex: 10000, 
+                      background: 'rgba(5, 6, 8, 0.92)', backdropFilter: 'blur(40px)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      flexDirection: 'column', gap: '20px', borderRadius: '24px',
-                      border: `1px solid ${scanStatus === 'completed' ? 'var(--accent-up)' : 'var(--accent-brand)'}44`
+                      flexDirection: 'column', gap: '32px',
+                      pointerEvents: 'all' // Blocks all interaction behind
                     }}
                   >
                     <div style={{ position: 'relative' }}>
                       {scanStatus === 'scanning' ? (
                         <>
                           <motion.div animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: 'linear' }}>
-                            <Cpu size={64} color="var(--accent-brand)" />
+                            <Cpu size={80} color="var(--accent-brand)" />
                           </motion.div>
                           <motion.div 
-                            animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }}
+                            animate={{ scale: [1, 1.4, 1], opacity: [0.2, 0.5, 0.2] }}
                             transition={{ duration: 2, repeat: Infinity }}
-                            style={{ position: 'absolute', inset: -15, borderRadius: '50%', border: '2px solid var(--accent-brand)', filter: 'blur(8px)' }}
+                            style={{ position: 'absolute', inset: -20, borderRadius: '50%', border: '2px solid var(--accent-brand)', filter: 'blur(12px)' }}
                           />
                         </>
+                      ) : scanStatus === 'up_to_date' ? (
+                        <motion.div 
+                          initial={{ scale: 0 }} animate={{ scale: 1 }}
+                          style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--accent-up)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <CheckCircle size={40} color="#000" />
+                        </motion.div>
                       ) : (
                         <motion.div 
                           initial={{ scale: 0 }} animate={{ scale: 1 }}
-                          style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'var(--accent-up)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--accent-brand)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <Sparkles size={32} color="#000" />
+                          <Sparkles size={40} color="#000" />
                         </motion.div>
                       )}
                     </div>
+
                     <div style={{ textAlign: 'center' }}>
-                      <div style={{ fontSize: '16px', fontWeight: 900, color: '#fff', letterSpacing: '0.2em', marginBottom: '8px' }}>
-                        {scanStatus === 'scanning' ? 'ANALYZING_NOW (ING)...' : 'SCAN_COMPLETED!'}
+                      <div style={{ fontSize: '24px', fontWeight: 900, color: '#fff', letterSpacing: '0.2em', marginBottom: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px' }}>
+                        {scanStatus === 'scanning' ? (
+                          <>
+                            ANALYZING_NOW
+                            <span style={{ color: 'var(--accent-brand)', background: 'rgba(252, 213, 53, 0.1)', padding: '4px 12px', borderRadius: '8px', fontSize: '18px' }}>
+                              [{scrapedCount} POSTS]
+                            </span>
+                          </>
+                        ) : scanStatus === 'up_to_date' ? (
+                          <span style={{ color: 'var(--accent-up)' }}>이미 최신 상태입니다</span>
+                        ) : 'INTELLIGENCE_SUCCESS'}
                       </div>
-                      <div style={{ fontSize: '11px', color: scanStatus === 'completed' ? 'var(--accent-up)' : 'var(--accent-brand)', fontWeight: 800 }}>
-                        {scanStatus === 'scanning' ? 'EXTRACTING_MARKET_INTELLIGENCE' : 'SYNCHRONIZING_FRESH_DATA...'}
+                      <div style={{ fontSize: '12px', color: scanStatus === 'scanning' ? 'var(--accent-brand)' : 'var(--accent-up)', fontWeight: 800, letterSpacing: '0.1em' }}>
+                        {scanStatus === 'scanning' ? 'CRAWLING_SOCIAL_SENTIMENT_FEEDS' : scanStatus === 'up_to_date' ? 'NO_NEW_DATA_DETECTED' : 'SYNCHRONIZING_TERMINAL_DATA_REFRESH'}
                       </div>
                     </div>
+
+                    {/* Scanning Progress Bar */}
+                    {scanStatus === 'scanning' && (
+                      <div style={{ width: '200px', height: '2px', background: 'rgba(255,255,255,0.1)', borderRadius: '1px', overflow: 'hidden' }}>
+                        <motion.div 
+                          animate={{ x: [-200, 200] }}
+                          transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+                          style={{ width: '100px', height: '100%', background: 'var(--accent-brand)' }}
+                        />
+                      </div>
+                    )}
                   </motion.div>
                 )}
              </AnimatePresence>

@@ -103,7 +103,7 @@ export class CommunityScraper {
     ticker: string,
     maxCount: number = 100,
     knownPostIds: Set<string> = new Set()
-  ): Promise<ScrapedPost[]> {
+  ): Promise<{ posts: ScrapedPost[], isUpToDate: boolean }> {
     logger.info(`[DOM 모드] 종목 ${ticker} 게시글 수집 시작 (최대 ${maxCount}건 신규, 기존 ${knownPostIds.size}건 제외)`);
 
     const { context, close } = await this.createAuthenticatedContext(session);
@@ -134,7 +134,9 @@ export class CommunityScraper {
       const seenPostIds = new Set<string>();
 
       let stagnantCount = 0;
-      const maxStagnantCount = 15; // 조금 더 끈기있게 스크롤
+      let consecutiveZeroCount = 0; // 핵심: 연속 10회 신규 0건 수집 추적
+      let isUpToDate = false;
+      const maxStagnantCount = 15; 
 
       while (posts.length < maxCount && stagnantCount < maxStagnantCount) {
         const feedPosts: any[] = await page.evaluate(`(() => {
@@ -152,7 +154,6 @@ export class CommunityScraper {
             return match ? parseInt(match[1].replace(/,/g, ""), 10) : 0;
           };
 
-          // 프로필 이미지 버튼을 베이스로 각 게시글 카드 식별
           const profileBtns = Array.from(document.querySelectorAll('button[id^="header::image::"]'));
           const results = [];
 
@@ -160,8 +161,6 @@ export class CommunityScraper {
             const postId = btn.id.split("::").pop();
             if (!postId) continue;
 
-            // 게시글 컨테이너 (각 게시글의 최상위 부모 후보)
-            // 보통 button -> div -> section 또는 특정 클래스의 div
             const card = btn.closest('div[class*="_1657u9f"]') || btn.parentElement?.parentElement?.parentElement;
             if (!card) continue;
 
@@ -171,8 +170,6 @@ export class CommunityScraper {
             const headerDiv = headerLabel.querySelector("div");
             const spans = headerDiv ? Array.from(headerDiv.querySelectorAll(":scope > span")) : [];
             
-            // 1. 이름 및 태그 추출 (첫 번째 span)
-            // '차트신공<span...>1억대 자산가</span>' 형태 대응
             const nameSpan = spans[0];
             let author = "";
             let identityTag = "";
@@ -191,12 +188,9 @@ export class CommunityScraper {
             }
             if (!author) author = "익명";
 
-            // 2. 시간 추출 (마지막 span) 
             const timeSpan = spans[spans.length - 1];
             const time = timeSpan ? text(timeSpan).split("·")[0].trim() : "방금";
 
-            // 3. 본문 추출
-            // Header Label 근처의 텍스트 영역 또는 특정 클래스 탐색
             const bodyEl = 
               card.querySelector('div[class*="_1xixuox1"]') || 
               card.querySelector('span[class*="_1xixuox1"]') ||
@@ -206,7 +200,6 @@ export class CommunityScraper {
             let body = text(bodyEl);
             body = body.replace(/\\.\\.\\.\\s*더 보기/g, "").trim();
 
-            // 본문이 너무 짧거나 헤더 정보와 중복되는 경우 걸러내기
             if (!body || body.length < 2 || body === author) continue;
 
             const likeCount = extractCountFromButton(card, "좋아요 버튼");
@@ -223,7 +216,7 @@ export class CommunityScraper {
               commentCount,
               url: location.origin + location.pathname + "#" + postId,
               isRepost: false,
-              identityTag, // 메타데이터용 (추후 활용)
+              identityTag,
             });
           }
 
@@ -237,7 +230,6 @@ export class CommunityScraper {
           if (seenPostIds.has(fp.postId)) continue;
           seenPostIds.add(fp.postId);
 
-          // DB에 이미 있는 게시글은 카운트하지 않고 스킵
           if (knownPostIds.has(fp.postId)) {
             skippedCount++;
             continue;
@@ -266,8 +258,21 @@ export class CommunityScraper {
           newCount++;
         }
 
-        if (newCount > 0 || skippedCount > 0) {
+        // 지능형 조기 종료 로직 시공
+        if (newCount === 0) {
+          consecutiveZeroCount++;
+          logger.info(`info: 현재 0건 신규 수집 (${consecutiveZeroCount}/10)`);
+          if (consecutiveZeroCount >= 10) {
+            logger.info("연속 10회 신규 수집 0건 발생. 조기 종료 및 최신 상태 선언.");
+            isUpToDate = true;
+            break;
+          }
+        } else {
+          consecutiveZeroCount = 0;
           logger.info(`현재 ${posts.length}건 신규 수집 (이번 스크롤: +${newCount}, 중복 스킵: ${skippedCount})`);
+        }
+
+        if (newCount > 0 || skippedCount > 0) {
           stagnantCount = 0;
         } else {
           stagnantCount++;
@@ -281,18 +286,12 @@ export class CommunityScraper {
         await page.waitForTimeout(1200 + Math.random() * 800);
       }
 
-      // 최신순(createdAt 내림차순) 정렬
       posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      // 날짜별 분류 요약 로그
       const dateGroups = this.groupByDate(posts);
-      logger.info(`수집 완료: 총 ${posts.length}건`);
-      logger.info(`--- 날짜별 분류 ---`);
-      for (const [date, count] of Object.entries(dateGroups)) {
-        logger.info(`  ${date}: ${count}건`);
-      }
-
-      return posts;
+      logger.info(`수집 완료: 총 ${posts.length}건, 최신여부: ${isUpToDate}`);
+      
+      return { posts, isUpToDate };
     } finally {
       await close();
     }

@@ -57,8 +57,8 @@ async function main() {
         console.log("ℹ️ 기존 게시글 조회 실패 - 중복 포함하여 수집합니다");
       }
 
-      const posts = await scraper.scrapeViaDom(session, ticker, maxCount, knownPostIds);
-      console.log(`✅ ${posts.length}건 신규 수집 완료`);
+      const { posts, isUpToDate } = await scraper.scrapeViaDom(session, ticker, maxCount, knownPostIds);
+      console.log(`✅ ${posts.length}건 신규 수집 완료 (최신 여부: ${isUpToDate})`);
 
       // 최신순 정렬 (createdAt 내림차순)
       posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -85,11 +85,11 @@ async function main() {
           await fetch("http://localhost:3000/crawl/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ jobId, posts: [], isLastChunk: true }),
+            body: JSON.stringify({ jobId, posts: [], isLastChunk: true, isUpToDate }),
           });
           console.log("ℹ️ 신규 게시글이 없어 빈 결과로 작업을 종료합니다.");
         } else {
-          // 일괄 처리 효율성 극대화: 25개씩 끊어서 전송 (사용자 요청에 따라 한 번에 대량 처리)
+          // 일괄 처리 효율성 극대화: 25개씩 끊어서 전송
           const chunkSize = 25;
           for (let i = 0; i < posts.length; i += chunkSize) {
             const chunk = posts.slice(i, i + chunkSize);
@@ -103,7 +103,8 @@ async function main() {
               body: JSON.stringify({ 
                 jobId, 
                 posts: chunk,
-                isLastChunk 
+                isLastChunk: isLastChunk || isUpToDate, // 침체 감지 시 즉시 마지막 청크로 표시
+                isUpToDate
               }),
             });
             
@@ -111,7 +112,7 @@ async function main() {
               throw new Error(`API response error: ${response.status}`);
             }
             
-            console.log(`✅ Chunk (${i + 1}~${Math.min(i + chunkSize, posts.length)}) 전송 완료 (마지막: ${isLastChunk})`);
+            console.log(`✅ Chunk (${i + 1}~${Math.min(i + chunkSize, posts.length)}) 전송 완료 (마지막/최신: ${isLastChunk || isUpToDate})`);
           }
         }
         

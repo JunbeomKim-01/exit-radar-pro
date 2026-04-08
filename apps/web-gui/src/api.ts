@@ -124,6 +124,7 @@ export interface CrawlJob {
   status: "pending" | "running" | "completed" | "failed";
   ticker: string | null;
   postCount: number;
+  isUpToDate: boolean;
   startedAt: string;
   completedAt: string | null;
   error?: string;
