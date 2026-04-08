@@ -116,7 +116,7 @@ export async function sentimentRoutes(app: FastifyInstance) {
 
   // GET /sentiment/insight — AI 감성 요약 및 인사이트 조회
   app.get("/insight", async (request, reply) => {
-    const { ticker } = request.query as { ticker?: string };
+    const ticker = ((request.query as { ticker?: string }).ticker || "").trim().toUpperCase();
 
     if (!ticker) {
       return reply.status(400).send({
@@ -143,20 +143,11 @@ export async function sentimentRoutes(app: FastifyInstance) {
       });
     }
 
-    // 2. 캐시 없거나 만료됨 -> 최신 게시글 15개 조회
-    const posts = await prisma.post.findMany({
-      where: { 
-        ticker: {
-          equals: ticker,
-          mode: 'insensitive'
-        }
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-      select: { title: true, body: true },
-    });
+    // 2. 캐시 없거나 만료됨 -> 서비스 호출하여 재건
+    const { rebuildSentimentInsight } = await import("../services/sentiment-service");
+    const insight = await rebuildSentimentInsight(ticker);
 
-    if (posts.length === 0) {
+    if (!insight) {
       return reply.send({
         success: true,
         data: {
@@ -167,36 +158,9 @@ export async function sentimentRoutes(app: FastifyInstance) {
       });
     }
 
-    // 3. AI 요약 생성 (LLM 호출)
-    const insight = await summarizePosts(ticker, posts);
-
-    if (insight) {
-      // 4. 결과 캐싱 (Upsert)
-      await prisma.sentimentInsight.upsert({
-        where: { ticker },
-        create: {
-          ticker,
-          summary: insight.summary,
-          alertLevel: insight.alert_level,
-          keyPoints: JSON.stringify(insight.key_points),
-          computedAt: new Date(),
-        },
-        update: {
-          summary: insight.summary,
-          alertLevel: insight.alert_level,
-          keyPoints: JSON.stringify(insight.key_points),
-          computedAt: new Date(),
-        }
-      });
-    }
-
     return reply.send({
       success: true,
-      data: insight || {
-        summary: "현재는 AI 요약 기능을 일시적으로 사용할 수 없습니다.",
-        alert_level: "info",
-        key_points: [],
-      },
+      data: insight,
     });
   });
 }

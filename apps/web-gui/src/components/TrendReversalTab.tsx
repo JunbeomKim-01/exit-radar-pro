@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   RefreshCw, AlertTriangle, TrendingUp,
   Activity, ArrowUpCircle, ArrowDownCircle, Eye, AlertCircle, CheckCircle2,
-  Info, Sparkles, Zap
+  Info, Sparkles
 } from 'lucide-react';
 import {
   fetchReversalSummary, fetchReversalDetails,
@@ -20,6 +20,10 @@ import {
 import { TradingViewChart } from './TradingViewChart';
 
 // ─── Constants ───
+
+const ShimmerLine = () => (
+  <div className="shimmer" style={{ height: '0.875rem', width: '100%', borderRadius: '0.25rem', marginBottom: '0.5rem' }} />
+);
 
 export const INDICATOR_EXPLANATIONS: Record<string, string> = {
   'VXN': '나스닥 100 변동성 지수입니다. 지수가 급등 후 꺾이는 지점이 시장의 단기 바닥인 경우가 많습니다.',
@@ -86,9 +90,9 @@ function StageBadge({ stage }: { stage: string }) {
 
   return (
     <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px',
-      background: c.bg, border: `1px solid ${c.color}33`, borderRadius: '6px',
-      padding: '4px 10px', fontSize: '11px', fontWeight: 800, color: c.color,
+      display: 'flex', alignItems: 'center', gap: '0.375rem',
+      background: c.bg, border: `1px solid ${c.color}33`, borderRadius: '0.375rem',
+      padding: '0.25rem 0.625rem', fontSize: '0.6875rem', fontWeight: 800, color: c.color,
     }}>
       <Icon size={14} />
       {c.label}
@@ -110,7 +114,7 @@ function Sparkline({ data, color, height = 24 }: { data: number[], color: string
   }).join(' ');
 
   return (
-    <svg width="100%" height={height} viewBox="0 -5 100 110" preserveAspectRatio="none" style={{ marginTop: '4px', opacity: 0.8 }}>
+    <svg width="100%" height={height} viewBox="0 -5 100 110" preserveAspectRatio="none" style={{ marginTop: '0.25rem', opacity: 0.8 }}>
        <polyline
          fill="none"
          stroke={color}
@@ -133,51 +137,59 @@ export function SignalCard({ signal, chartData, active, onClick }: { signal: Sig
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ scale: 1.02, background: 'rgba(255,255,255,0.03)' }}
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      whileTap={{ scale: 0.96 }}
       onClick={onClick}
+      className="glass-card"
       style={{
-        background: active ? 'rgba(255,255,255,0.05)' : 'var(--bg-card)',
-        border: `1px solid ${active ? 'var(--accent-brand)' : (signal.triggered ? barColor + '44' : 'var(--border-color)')}`,
-        borderRadius: '8px',
-        padding: '12px',
+        background: active ? 'rgba(252, 213, 53, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+        borderColor: active ? 'var(--accent-brand)' : (signal.triggered ? `${barColor}66` : 'rgba(255,255,255,0.08)'),
+        padding: '1rem',
         display: 'flex',
         flexDirection: 'column',
-        gap: '8px',
+        gap: '0.75rem',
         cursor: 'pointer',
-        transition: 'all 0.2s ease',
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        minWidth: window.innerWidth <= 1024 ? '11.25rem' : 'auto'
       }}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ fontSize: '10px', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-            {signal.name}
-          </span>
-          <span className="nums" style={{ fontSize: '18px', fontWeight: 900, color: signal.triggered ? barColor : 'var(--text-active)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+             <div style={{ width: '0.1875rem', height: '0.625rem', background: barColor, borderRadius: '0.125rem' }} />
+             <span style={{ fontSize: '0.625rem', fontWeight: 900, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+               {signal.name}
+             </span>
+          </div>
+          <span className="nums" style={{ fontSize: '1.25rem', fontWeight: 900, color: signal.triggered ? barColor : 'var(--text-active)', letterSpacing: '-0.02em' }}>
             {signal.description?.match(/[-+]?\d*\.?\d+[%x]?/)?.[0] || '--'}
           </span>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '12px', fontWeight: 900, color: barColor }}>
-            {signal.score}<span style={{ fontSize: '9px', opacity: 0.6 }}>/{signal.maxScore}</span>
+          <div style={{ fontSize: '0.8125rem', fontWeight: 900, color: barColor }}>
+            {signal.score}<span style={{ fontSize: '0.5625rem', opacity: 0.5 }}>/{signal.maxScore}</span>
           </div>
-          {signal.triggered && <div style={{ fontSize: '8px', fontWeight: 900, color: 'var(--accent-down)', marginTop: '2px' }}>TRIGGERED</div>}
+          {signal.triggered && (
+             <div className="neon-pulse-brand" style={{ width: '0.375rem', height: '0.375rem', background: 'var(--accent-down)', borderRadius: '50%', marginLeft: 'auto', marginTop: '0.25rem' }} />
+          )}
         </div>
       </div>
       
       {/* Score bar */}
-      <div style={{ height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', overflow: 'hidden' }}>
+      <div style={{ height: '0.1875rem', background: 'rgba(255,255,255,0.03)', borderRadius: '0.125rem', overflow: 'hidden' }}>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${fillPercent}%` }}
-          transition={{ duration: 0.8, ease: 'easeOut' }}
-          style={{ height: '100%', background: barColor, borderRadius: '2px' }}
+          transition={{ duration: 1, ease: 'easeOut' }}
+          style={{ height: '100%', background: barColor, borderRadius: '0.125rem' }}
         />
       </div>
 
       {chartData && chartData.length > 0 && (
-        <Sparkline data={chartData} color={barColor} />
+        <div style={{ height: '1.875rem', opacity: 0.6 }}>
+           <Sparkline data={chartData} color={barColor} height={30} />
+        </div>
       )}
     </motion.div>
   );
@@ -185,7 +197,7 @@ export function SignalCard({ signal, chartData, active, onClick }: { signal: Sig
 
 // ─── Main Component ───
 
-export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnalysis, chartData }: { selectedSignal: any, aiAnalysis: string | null, fetchingAnalysis: boolean, chartData: any[] }) {
+export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnalysis, chartData, onBack }: { selectedSignal: any, aiAnalysis: string | null, fetchingAnalysis: boolean, chartData: any[], onBack?: () => void }) {
   if (!selectedSignal) {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '14px', fontWeight: 800 }}>
@@ -197,51 +209,63 @@ export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnaly
   return (
     <motion.div
       key={selectedSignal.name}
-      initial={{ opacity: 0, x: 20 }}
+      initial={{ opacity: 0, x: '1.25rem' }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}
+      exit={{ opacity: 0, x: '-1.25rem' }}
+      style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
     >
       <header>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '4px' }}>DEEP_DIVE_ANALYTICS</div>
-        <h2 style={{ fontSize: '28px', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {onBack && window.innerWidth <= 1024 && (
+          <button 
+            onClick={onBack}
+            style={{ 
+              marginBottom: '1rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border-color)', 
+              borderRadius: '0.5rem', padding: '0.5rem 0.75rem', color: 'var(--accent-brand)', fontSize: '0.6875rem', fontWeight: 900,
+              display: 'flex', alignItems: 'center', gap: '0.375rem' 
+            }}
+          >
+            ← BACK_TO_RADAR
+          </button>
+        )}
+        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '0.25rem' }}>DEEP_DIVE_ANALYTICS</div>
+        <h2 style={{ fontSize: '1.75rem', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           {selectedSignal.name}
           {selectedSignal.triggered && <AlertTriangle size={24} color="var(--accent-down)" />}
         </h2>
-        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.6, display: 'flex', gap: '12px' }}>
-          <Info size={16} style={{ flexShrink: 0, marginTop: '2px' }} color="var(--accent-brand)" />
+        <div style={{ marginTop: '1rem', padding: '1rem', background: 'rgba(255,255,255,0.03)', borderRadius: '0.75rem', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', fontSize: '0.8125rem', lineHeight: 1.6, display: 'flex', gap: '0.75rem' }}>
+          <Info size={16} style={{ flexShrink: 0, marginTop: '0.125rem' }} color="var(--accent-brand)" />
           {INDICATOR_EXPLANATIONS[selectedSignal.name.split(' ')[0]] || INDICATOR_EXPLANATIONS[selectedSignal.name] || '지표 상세 설명이 준비 중입니다.'}
         </div>
       </header>
 
       {/* 🤖 AI Analyst Insight Section */}
-      <div style={{
-        marginTop: '8px',
-        padding: '24px',
-        background: 'linear-gradient(135deg, rgba(93,92,222,0.1) 0%, rgba(0,0,0,0.1) 100%)',
-        borderRadius: '16px',
-        border: '1px solid rgba(93,92,222,0.3)',
-        boxShadow: '0 8px 32px 0 rgba(0,0,0,0.2)',
+      <div className="glass-card" style={{
+        marginTop: '0.5rem',
+        padding: '1.5rem',
+        background: 'linear-gradient(135deg, rgba(139,92,246,0.1) 0%, rgba(0,0,0,0.2) 100%)',
         position: 'relative',
         overflow: 'hidden'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-          <Sparkles size={18} color="#A78BFA" />
-          <span style={{ fontSize: '13px', fontWeight: 900, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            AI Macro Analyst Briefing
+        {/* Pulsing Status Dot */}
+        <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem' }}>
+           <div className="neon-pulse-brand" style={{ width: '0.5rem', height: '0.5rem', background: '#A78BFA', borderRadius: '50%' }} />
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '1rem' }}>
+          <Sparkles size={20} color="#A78BFA" />
+          <span style={{ fontSize: '0.8125rem', fontWeight: 900, color: '#A78BFA', textTransform: 'uppercase', letterSpacing: '0.1rem' }}>
+            AI_MACRO_BRIEFING
           </span>
         </div>
 
         {fetchingAnalysis ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div className="shimmer" style={{ height: '14px', width: '100%', borderRadius: '4px' }} />
-            <div className="shimmer" style={{ height: '14px', width: '85%', borderRadius: '4px' }} />
-            <div className="shimmer" style={{ height: '14px', width: '92%', borderRadius: '4px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+            <ShimmerLine />
           </div>
         ) : aiAnalysis ? (
           <div style={{ 
             color: '#E5E7EB', 
-            fontSize: '14px', 
+            fontSize: '0.875rem', 
             lineHeight: '1.8', 
             fontWeight: 500,
             whiteSpace: 'pre-wrap',
@@ -250,14 +274,14 @@ export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnaly
             {aiAnalysis}
           </div>
         ) : (
-          <div style={{ color: 'var(--text-muted)', fontSize: '13px', fontStyle: 'italic' }}>
-            이 지표에 대한 새로운 분석을 생성하는 중입니다...
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', fontStyle: 'italic' }}>
+            분석 지침을 수립하는 중입니다...
           </div>
         )}
       </div>
 
-      <div style={{ padding: '20px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', height: selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? '400px' : 'auto' }}>
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '12px' }}>{selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? 'REALTIME_MACRO_FLOW' : '60D_TREND_VISUALIZATION'}</div>
+      <div style={{ padding: '1.25rem', background: 'var(--bg-card)', borderRadius: '0.75rem', border: '1px solid var(--border-color)', height: selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? '25rem' : 'auto' }}>
+        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 800, marginBottom: '0.75rem' }}>{selectedSignal.name.toUpperCase().includes('YIELD CURVE') ? 'REALTIME_MACRO_FLOW' : '60D_TREND_VISUALIZATION'}</div>
         {selectedSignal.name.toUpperCase().includes('YIELD CURVE') || selectedSignal.name.includes('금리 커브') ? (
           <TradingViewChart ticker="YIELD CURVE" companyName="Yield Curve" />
         ) : (
@@ -265,21 +289,21 @@ export function ReversalDetailsPanel({ selectedSignal, aiAnalysis, fetchingAnaly
         )}
       </div>
 
-      <div style={{ padding: '20px', background: selectedSignal.triggered ? 'rgba(239,68,68,0.05)' : 'rgba(14,203,129,0.05)', borderRadius: '12px', border: `1px solid ${selectedSignal.triggered ? 'var(--accent-down)44' : 'var(--accent-up)44'}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <span style={{ fontSize: '12px', fontWeight: 800 }}>CURRENT_SIGNAL_STATUS</span>
-          <span style={{ fontSize: '10px', fontWeight: 900, padding: '4px 8px', background: selectedSignal.triggered ? 'var(--accent-down)' : 'var(--accent-up)', color: '#000', borderRadius: '4px' }}>
+      <div style={{ padding: '1.25rem', background: selectedSignal.triggered ? 'rgba(239,68,68,0.05)' : 'rgba(14,203,129,0.05)', borderRadius: '0.75rem', border: `1px solid ${selectedSignal.triggered ? 'var(--accent-down)44' : 'var(--accent-up)44'}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <span style={{ fontSize: '0.75rem', fontWeight: 800 }}>CURRENT_SIGNAL_STATUS</span>
+          <span style={{ fontSize: '0.625rem', fontWeight: 900, padding: '0.25rem 0.5rem', background: selectedSignal.triggered ? 'var(--accent-down)' : 'var(--accent-up)', color: '#000', borderRadius: '0.25rem' }}>
             {selectedSignal.triggered ? 'CRITICAL_BREACH' : 'RANGE_STABLE'}
           </span>
         </div>
-        <p className="nums" style={{ fontSize: '24px', fontWeight: 900, color: '#fff', margin: '8px 0' }}>{selectedSignal.description}</p>
+        <p className="nums" style={{ fontSize: '1.5rem', fontWeight: 900, color: '#fff', margin: '0.5rem 0' }}>{selectedSignal.description}</p>
         
-        <div style={{ marginTop: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', marginBottom: '8px' }}>
+        <div style={{ marginTop: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.6875rem', marginBottom: '0.5rem' }}>
             <span style={{ color: 'var(--text-muted)' }}>SCORE_CONTRIBUTION</span>
             <span style={{ color: '#fff', fontWeight: 900 }}>{selectedSignal.score} / {selectedSignal.maxScore}</span>
           </div>
-          <div style={{ height: '6px', background: 'rgba(0,0,0,0.2)', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{ height: '0.375rem', background: 'rgba(0,0,0,0.2)', borderRadius: '0.1875rem', overflow: 'hidden' }}>
             <div style={{ width: `${(selectedSignal.score / selectedSignal.maxScore) * 100}%`, height: '100%', background: 'var(--accent-brand)' }} />
           </div>
         </div>
@@ -295,12 +319,13 @@ export function TrendReversalTab() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedSignalName, setSelectedSignalName] = useState<string | null>(null);
   
-  // AI Analyst States
+  // Navigation State for Mobile (Grid vs Detail)
+  const [mobileView, setMobileView] = useState<'grid' | 'detail'>('grid');
+  
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [fetchingAnalysis, setFetchingAnalysis] = useState(false);
   const [analysisCache, setAnalysisCache] = useState<Record<string, string>>({});
 
-  // Unified AI States
   const [unifiedAnalysis, setUnifiedAnalysis] = useState<string | null>(null);
   const [fetchingUnified, setFetchingUnified] = useState(false);
   const [isBriefingExpanded, setIsBriefingExpanded] = useState(false);
@@ -314,7 +339,6 @@ export function TrendReversalTab() {
       setSummary(s);
       setDetails(d);
       
-      // Default selection
       if (d && !selectedSignalName) {
         setSelectedSignalName(d.signal.coreSignals[0].name);
       }
@@ -342,11 +366,9 @@ export function TrendReversalTab() {
     loadUnified();
   }, []);
 
-  // Fetch AI Analysis when signal selection changes
   useEffect(() => {
     if (!selectedSignalName) return;
     
-    // Check cache first
     if (analysisCache[selectedSignalName]) {
       setAiAnalysis(analysisCache[selectedSignalName]);
       return;
@@ -356,7 +378,6 @@ export function TrendReversalTab() {
       setFetchingAnalysis(true);
       setAiAnalysis(null);
       try {
-        // Strip out emojis or extra text for the API search
         const cleanName = selectedSignalName.split(' ')[0];
         const res = await fetchIndicatorAnalysis(cleanName);
         if (res && res.analysis) {
@@ -378,11 +399,20 @@ export function TrendReversalTab() {
     try {
       await triggerReversalRefresh();
       await Promise.all([loadData(), loadUnified()]);
-      setAnalysisCache({}); // Clear cache on refresh
+      setAnalysisCache({});
     } catch (err) {
       console.error('Refresh error:', err);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  const handleSignalClick = (name: string) => {
+    setSelectedSignalName(name);
+    if (window.innerWidth <= 1024) {
+      setMobileView('detail');
+      // Scroll to top for detail view
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -394,7 +424,6 @@ export function TrendReversalTab() {
     );
   }
 
-  // ─── No Data State ───
   if (!summary) return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
       <Activity size={48} style={{ opacity: 0.2 }} color="var(--text-muted)" />
@@ -428,214 +457,224 @@ export function TrendReversalTab() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', background: 'var(--bg-panel)', position: 'relative' }}>
       
-      {/* 🔄 Local Progress Bar */}
       {(loading || refreshing) && (
-        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '2px', background: 'rgba(255,255,255,0.05)', zIndex: 110 }}>
-           <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ height: '100%', background: 'var(--accent-brand)', boxShadow: '0 0 12px var(--accent-brand)' }} />
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '0.125rem', background: 'rgba(255,255,255,0.05)', zIndex: 110 }}>
+           <motion.div initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ repeat: Infinity, duration: 1.5 }} style={{ height: '100%', background: 'var(--accent-brand)', boxShadow: '0 0 0.75rem var(--accent-brand)' }} />
         </div>
       )}
 
-      {/* 🔄 Refreshing Overlay */}
-      <AnimatePresence>
-        {refreshing && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ 
-              position: 'absolute', 
-              inset: 0, 
-              background: 'rgba(10,12,18,0.4)', 
-              backdropFilter: 'blur(4px)', 
-              zIndex: 100, 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center',
-              flexDirection: 'column',
-              gap: '16px'
-            }}
-          >
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }}>
-              <RefreshCw size={32} color="var(--accent-brand)" />
-            </motion.div>
-            <div style={{ color: 'var(--accent-brand)', fontSize: '13px', fontWeight: 900, letterSpacing: '0.1em' }}>REFRESHING_MARKET_SIGNALS...</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ─── A. Strategic Action Banner (Responsive) ─── */}
-      <div style={{ 
-        padding: window.innerWidth > 1024 ? '24px 32px' : '20px', 
-        background: `linear-gradient(90deg, rgba(0,0,0,0.4) 0%, ${summary.strategicAction.color}15 100%)`,
-        borderBottom: `1px solid ${summary.strategicAction.color}33`,
-        display: 'flex',
-        flexDirection: window.innerWidth > 1024 ? 'row' : 'column',
-        justifyContent: 'space-between',
-        alignItems: window.innerWidth > 1024 ? 'center' : 'flex-start',
-        gap: '20px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth > 1024 ? '24px' : '16px' }}>
-          <motion.div
-            animate={{ scale: [1, 1.05, 1] }} 
-            transition={{ duration: 3, repeat: Infinity }}
-            style={{ 
-              width: window.innerWidth > 1024 ? '64px' : '48px', 
-              height: window.innerWidth > 1024 ? '64px' : '48px', 
-              borderRadius: '50%', background: `${summary.strategicAction.color}22`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', border: `2px solid ${summary.strategicAction.color}44`,
-              flexShrink: 0
-            }}
-          >
-            {isTopCandidate 
-              ? <ArrowDownCircle size={window.innerWidth > 1024 ? 32 : 24} color={summary.strategicAction.color} />
-              : <ArrowUpCircle size={window.innerWidth > 1024 ? 32 : 24} color={summary.strategicAction.color} />
-            }
-          </motion.div>
-          
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              <span style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: '#fff', letterSpacing: '-0.02em' }}>
-                {summary.strategicAction.short}
-              </span>
-              <StageBadge stage={summary.stage} />
-            </div>
-            <p style={{ fontSize: window.innerWidth > 1024 ? '15px' : '12px', fontWeight: 600, color: 'var(--text-secondary)', margin: 0 }}>
-              {summary.strategicAction.long}
-            </p>
-          </div>
-        </div>
-
-        <div style={{ width: window.innerWidth > 1024 ? 'auto' : '100%', textAlign: 'right', display: 'flex', justifyContent: 'space-between', gap: '32px', borderTop: window.innerWidth > 1024 ? 'none' : '1px solid rgba(255,255,255,0.05)', paddingTop: window.innerWidth > 1024 ? '0' : '12px' }}>
-             <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>SIGNAL_STRENGTH</div>
-                <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: summary.strategicAction.color }}>
-                  {summary.score}<span style={{ fontSize: '14px', opacity: 0.5 }}>/100</span>
-                </div>
-             </div>
-             <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 800 }}>CONFIDENCE</div>
-                <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '32px' : '24px', fontWeight: 900, color: '#fff' }}>
-                  {summary.confidence.toFixed(0)}<span style={{ fontSize: '14px', opacity: 0.5 }}>%</span>
-                </div>
-             </div>
-             <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <RefreshCw size={20} className={refreshing ? 'spin' : ''} />
-             </button>
-        </div>
-      </div>
-
-      <div style={{ flex: 1, display: 'flex', flexDirection: window.innerWidth > 1024 ? 'row' : 'column', minHeight: 0, overflowY: window.innerWidth > 1024 ? 'hidden' : 'auto' }}>
+      {/* Main Content Area - Scrollable Container */}
+      <div style={{ flex: 1, overflowY: 'auto', paddingBottom: '7.5rem' }}>
         
-        {/* LEFT: MAIN CONTENT */}
-        <div style={{ flex: 1.6, overflowY: window.innerWidth > 1024 ? 'auto' : 'visible', padding: window.innerWidth > 1024 ? '24px' : '16px', display: 'flex', flexDirection: 'column', gap: '24px', borderRight: window.innerWidth > 1024 ? '1px solid var(--border-color)' : 'none' }}>
-          
-          {/* 🤖 Unified AI Master Strategy Section - MOVED INSIDE SCROLLABLE AREA */}
-          <div style={{
-               padding: '24px',
-               background: 'linear-gradient(135deg, rgba(93,92,222,0.18) 0%, rgba(139,92,246,0.05) 100%)',
-               borderRadius: '24px',
-               border: '1px solid rgba(139,92,246,0.3)',
-               boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
-               position: 'relative',
-               overflow: 'hidden'
-             }}>
-               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                   <div style={{ padding: '8px', background: 'rgba(139,92,246,0.2)', borderRadius: '12px' }}>
-                     <Zap size={20} color="#A78BFA" />
-                   </div>
-                   <div>
-                     <h2 style={{ fontSize: '15px', fontWeight: 900, color: '#A78BFA', letterSpacing: '0.05em', margin: 0 }}>
-                       AI MASTER STRATEGY BRIEFING
-                     </h2>
-                   </div>
-                 </div>
-                 {window.innerWidth <= 1024 && (
-                   <button onClick={() => setIsBriefingExpanded(!isBriefingExpanded)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', color: '#fff', fontSize: '10px', fontWeight: 900, padding: '6px 12px', borderRadius: '8px' }}>
-                     {isBriefingExpanded ? 'COLLAPSE' : 'EXPAND'}
-                   </button>
-                 )}
-               </div>
-
-               <div style={{ 
-                 maxHeight: (window.innerWidth <= 1024 && !isBriefingExpanded) ? '80px' : 'none',
-                 overflow: 'hidden',
-                 position: 'relative'
-               }}>
-                 {fetchingUnified ? (
-                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                     <div className="shimmer" style={{ height: '16px', width: '100%', borderRadius: '4px' }} />
-                     <div className="shimmer" style={{ height: '16px', width: '92%', borderRadius: '4px' }} />
-                   </div>
-                 ) : unifiedAnalysis ? (
-                   <div style={{ color: '#fff', fontSize: '15px', lineHeight: '1.8', fontWeight: 600, whiteSpace: 'pre-wrap', letterSpacing: '-0.01em' }}>
-                     {unifiedAnalysis}
-                   </div>
-                 ) : (
-                   <div style={{ color: 'var(--text-muted)', fontSize: '14px', fontStyle: 'italic' }}>분석 지침을 생성 중...</div>
-                 )}
-                 {window.innerWidth <= 1024 && !isBriefingExpanded && (
-                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '40px', background: 'linear-gradient(transparent, rgba(20,20,30,0.8))' }} />
-                 )}
-               </div>
-           </div>
-          
-          {/* Main Chart */}
-          <section>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px' }}>
-               <h3 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                 <TrendingUp size={16} color="var(--accent-brand)" /> MARKET_BENCHMARK (QQQ)
-               </h3>
-               <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{summary.explanation}</span>
-            </div>
-            <div style={{ height: '360px', background: 'var(--bg-card)', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
-              <TradingViewChart ticker="QQQ" companyName="Nasdaq 100" />
-            </div>
-          </section>
-
-          {/* Indicator Grid */}
-          <section>
-            <h3 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}>
-              MACRO_SIGNAL_RADAR
-              {window.innerWidth <= 1024 && <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>SWIPE_TO_EXPLORE →</span>}
-            </h3>
-            <div 
-              className={window.innerWidth <= 1024 ? "mobile-scroll-container" : ""}
-              style={{ 
-                display: window.innerWidth <= 1024 ? 'flex' : 'grid', 
-                gridTemplateColumns: window.innerWidth <= 1024 ? 'none' : 'repeat(auto-fill, minmax(180px, 1fr))', 
-                gap: '12px',
-                overflowX: window.innerWidth <= 1024 ? 'auto' : 'visible',
-                paddingBottom: window.innerWidth <= 1024 ? '12px' : '0'
-              }}
+        <AnimatePresence mode="wait">
+          {window.innerWidth > 1024 || mobileView === 'grid' ? (
+            <motion.div 
+              key="macro-grid-view" 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              style={{ display: 'flex', flexDirection: 'column' }}
             >
-              {[...(details?.signal.coreSignals || []), ...(details?.signal.supportSignals || [])].map((s, i) => (
-                <motion.div 
-                  key={i} 
-                  animate={refreshing ? { opacity: 0.3 } : { opacity: 1 }}
-                  style={{ minWidth: window.innerWidth <= 1024 ? '180px' : 'auto', flexShrink: 0 }}
-                >
-                   <SignalCard 
-                     signal={s} 
-                     chartData={getChartData(s.name, details?.chartData || [])}
-                     active={selectedSignalName === s.name}
-                     onClick={() => setSelectedSignalName(s.name)}
-                   />
-                </motion.div>
-              ))}
-            </div>
-          </section>
-        </div>
+              {/* ─── A. Strategic Action Banner (Unpinned for mobile) ─── */}
+              <div style={{ 
+                padding: window.innerWidth > 1024 ? '1.5rem 2rem' : '1.25rem', 
+                background: `linear-gradient(90deg, rgba(0,0,0,0.6) 0%, ${summary.strategicAction.color}15 100%)`,
+                borderBottom: `0.0625rem solid ${summary.strategicAction.color}33`,
+                display: 'flex',
+                flexDirection: window.innerWidth > 1024 ? 'row' : 'column',
+                justifyContent: 'space-between',
+                alignItems: window.innerWidth > 1024 ? 'center' : 'flex-start',
+                gap: '1.5rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: window.innerWidth > 1024 ? '1.75rem' : '1rem' }}>
+                  <motion.div
+                    animate={{ scale: [1, 1.05, 1], rotate: [0, 2, -2, 0] }} 
+                    transition={{ duration: 4, repeat: Infinity }}
+                    style={{ 
+                      width: window.innerWidth > 1024 ? '5rem' : '4rem', 
+                      height: window.innerWidth > 1024 ? '5rem' : '4rem', 
+                      borderRadius: '1.5rem', background: `${summary.strategicAction.color}22`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                      border: `0.0625rem solid ${summary.strategicAction.color}66`,
+                      flexShrink: 0,
+                      boxShadow: `0 0.5rem 2rem ${summary.strategicAction.color}22`
+                    }}
+                  >
+                    {isTopCandidate 
+                      ? <ArrowDownCircle size={window.innerWidth > 1024 ? 40 : 32} color={summary.strategicAction.color} />
+                      : <ArrowUpCircle size={window.innerWidth > 1024 ? 40 : 32} color={summary.strategicAction.color} />
+                    }
+                  </motion.div>
+                  
+                  <div className="stagger-entry">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.375rem' }}>
+                      <span style={{ fontSize: window.innerWidth > 1024 ? '2.25rem' : '1.625rem', fontWeight: 900, color: '#fff', letterSpacing: '-0.03em' }}>
+                        {summary.strategicAction.short}
+                      </span>
+                      <StageBadge stage={summary.stage} />
+                    </div>
+                    <p style={{ fontSize: window.innerWidth > 1024 ? '0.9375rem' : '0.8125rem', fontWeight: 600, color: 'var(--text-muted)', margin: 0, lineHeight: 1.4 }}>
+                      {summary.strategicAction.long}
+                    </p>
+                  </div>
+                </div>
 
-        {/* RIGHT: DEEP ANALYSIS PANEL */}
-        <div style={{ flex: 1, padding: window.innerWidth > 1024 ? '24px' : '16px', overflowY: window.innerWidth > 1024 ? 'auto' : 'visible', background: 'rgba(0,0,0,0.1)', borderTop: window.innerWidth > 1024 ? 'none' : '1px solid var(--border-color)', paddingBottom: '100px' }}>
-           <ReversalDetailsPanel 
-             selectedSignal={selectedSignal}
-             aiAnalysis={aiAnalysis}
-             fetchingAnalysis={fetchingAnalysis}
-             chartData={getChartData(selectedSignal?.name || '', details?.chartData || [])}
-           />
-        </div>
+                <div style={{ 
+                  width: window.innerWidth > 1024 ? 'auto' : '100%', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  gap: '2rem', 
+                  padding: window.innerWidth > 1024 ? '0' : '1rem',
+                  background: window.innerWidth > 1024 ? 'transparent' : 'rgba(255,255,255,0.02)',
+                  borderRadius: '1rem'
+                }}>
+                     <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>SIGNAL_STRENGTH</div>
+                        <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '2rem' : '1.75rem', fontWeight: 900, color: summary.strategicAction.color }}>
+                          {summary.score}<span style={{ fontSize: '0.875rem', opacity: 0.5 }}>/100</span>
+                        </div>
+                     </div>
+                     <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 800, letterSpacing: '0.1em' }}>CONFIDENCE</div>
+                        <div className="nums" style={{ fontSize: window.innerWidth > 1024 ? '2rem' : '1.75rem', fontWeight: 900, color: '#fff' }}>
+                          {summary.confidence.toFixed(0)}<span style={{ fontSize: '0.875rem', opacity: 0.5 }}>%</span>
+                        </div>
+                     </div>
+                     <div style={{ width: '2.5rem', height: '2.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <button onClick={handleRefresh} disabled={refreshing} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                            <RefreshCw size={24} className={refreshing ? 'spin' : ''} />
+                        </button>
+                     </div>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', flexDirection: window.innerWidth > 1024 ? 'row' : 'column', minHeight: 0, overflowY: window.innerWidth > 1024 ? 'auto' : 'visible' }}>
+        
+                <div style={{ flex: 1.6, overflowY: window.innerWidth > 1024 ? 'auto' : 'visible', padding: window.innerWidth > 1024 ? '2rem' : '1.25rem', display: 'flex', flexDirection: 'column', gap: '2rem', borderRight: window.innerWidth > 1024 ? '0.0625rem solid var(--border-color)' : 'none' }}>
+                  {/* 🤖 Unified AI Master Strategy Section (Collapsible) */}
+                  <div className="glass-card" style={{
+                       padding: '1.5rem',
+                       background: 'linear-gradient(135deg, rgba(139,92,246,0.15) 0%, rgba(139,92,246,0.05) 100%)',
+                       position: 'relative',
+                       overflow: 'hidden'
+                     }}>
+                       <div 
+                         onClick={() => setIsBriefingExpanded(!isBriefingExpanded)}
+                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                       >
+                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div className="neon-pulse-brand" style={{ width: '0.5rem', height: '0.5rem', background: '#A78BFA', borderRadius: '50%' }} />
+                            <h2 style={{ fontSize: '0.8125rem', fontWeight: 900, color: '#A78BFA', letterSpacing: '0.15em', margin: 0 }}>
+                              AI_MASTER_STRATEGY_BRIEFING
+                            </h2>
+                         </div>
+                         <button className="insight-chip active" style={{ fontSize: '0.625rem' }}>
+                            {isBriefingExpanded ? 'COLLAPSE' : 'EXPAND'}
+                         </button>
+                       </div>
+
+                       <motion.div 
+                         initial={false}
+                         animate={{ 
+                           height: isBriefingExpanded ? 'auto' : (window.innerWidth <= 1024 ? '6.25rem' : 'auto'),
+                           marginTop: '1.25rem'
+                         }}
+                         transition={{ duration: 0.4, ease: [0.4, 0, 0.2, 1] }}
+                         style={{ 
+                           overflow: 'hidden',
+                           position: 'relative'
+                         }}
+                       >
+                         {fetchingUnified ? (
+                           <ShimmerLine />
+                         ) : unifiedAnalysis ? (
+                           <div style={{ color: '#fff', fontSize: '0.9375rem', lineHeight: '1.9', fontWeight: 600, whiteSpace: 'pre-wrap', letterSpacing: '-0.02em', opacity: (window.innerWidth <= 1024 && !isBriefingExpanded) ? 0.7 : 1 }}>
+                             {unifiedAnalysis}
+                           </div>
+                         ) : (
+                           <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem', fontStyle: 'italic' }}>전략 지침을 도출 중입니다...</div>
+                         )}
+                         {window.innerWidth <= 1024 && !isBriefingExpanded && (
+                            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '3.75rem', background: 'linear-gradient(transparent, #0a0c12)' }} />
+                         )}
+                       </motion.div>
+                  </div>
+                  
+                  {/* Main Chart */}
+                  <section className="stagger-entry">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1rem' }}>
+                       <div className="premium-card-header" style={{ marginBottom: 0, padding: '0.5rem 1rem', marginLeft: '-1.25rem' }}>
+                          <h3 style={{ fontSize: '0.8125rem', fontWeight: 900, color: '#fff', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <TrendingUp size={16} color="var(--accent-brand)" /> MARKET_BENCHMARK (QQQ)
+                          </h3>
+                       </div>
+                       <span style={{ fontSize: '0.625rem', color: 'var(--text-muted)', fontWeight: 800 }}>{summary.explanation}</span>
+                    </div>
+                    <div style={{ height: '22.5rem', background: 'var(--bg-card)', borderRadius: '1.5rem', border: '0.0625rem solid var(--border-color)', overflow: 'hidden', boxShadow: '0 0.5rem 2rem rgba(0,0,0,0.4)' }}>
+                      <TradingViewChart ticker="QQQ" companyName="Nasdaq 100" />
+                    </div>
+                  </section>
+
+                  {/* Indicator Grid (7 indicators in 2-column grid for mobile) */}
+                  <section className="stagger-entry">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                       <h3 style={{ fontSize: '14px', fontWeight: 900, color: '#fff', margin: 0 }}>MACRO_SIGNAL_RADAR</h3>
+                       {window.innerWidth <= 1024 && <div className="insight-chip active">GRID_MODE <Sparkles size={12} /></div>}
+                    </div>
+                    <div 
+                      style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: window.innerWidth <= 1024 ? 'repeat(2, 1fr)' : 'repeat(auto-fill, minmax(200px, 1fr))', 
+                        gap: '10px'
+                      }}
+                    >
+                      {[...(details?.signal.coreSignals || []), ...(details?.signal.supportSignals || [])].map((s, i) => (
+                        <div key={i}>
+                           <SignalCard 
+                             signal={s} 
+                             chartData={getChartData(s.name, details?.chartData || [])}
+                             active={selectedSignalName === s.name}
+                             onClick={() => handleSignalClick(s.name)}
+                           />
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+
+                {/* Desktop Right Side Details (Hidden on mobile grid view) */}
+                {window.innerWidth > 1024 && (
+                  <div style={{ flex: 1, padding: '0 0 0 2rem', borderLeft: '0.0625rem solid var(--border-color)' }}>
+                    <ReversalDetailsPanel 
+                      selectedSignal={selectedSignal}
+                      aiAnalysis={aiAnalysis}
+                      fetchingAnalysis={fetchingAnalysis}
+                      chartData={getChartData(selectedSignal?.name || '', details?.chartData || [])}
+                    />
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          ) : (
+            /* ─── Mobile Detail View Flow ─── */
+            <motion.div 
+              key="macro-detail-view" 
+              initial={{ opacity: 0, x: 50 }} 
+              animate={{ opacity: 1, x: 0 }} 
+              exit={{ opacity: 0, x: -50 }}
+              style={{ padding: '1.25rem' }}
+            >
+               <ReversalDetailsPanel 
+                 selectedSignal={selectedSignal}
+                 aiAnalysis={aiAnalysis}
+                 fetchingAnalysis={fetchingAnalysis}
+                 chartData={getChartData(selectedSignal?.name || '', details?.chartData || [])}
+                 onBack={() => setMobileView('grid')}
+               />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

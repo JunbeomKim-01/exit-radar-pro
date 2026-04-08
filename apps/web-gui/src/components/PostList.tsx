@@ -1,8 +1,12 @@
+import { useState } from 'react';
 import { format } from 'date-fns';
-import { MessageSquare, ExternalLink, User, Quote } from 'lucide-react';
+import { MessageSquare, ExternalLink, User, Quote, ChevronDown, ChevronUp } from 'lucide-react';
 import type { PostResponse } from '../api';
 
 export function PostList({ posts }: { posts: PostResponse[] }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const INITIAL_COUNT = 5;
+
   if (!posts || posts.length === 0) {
     return (
       <div className="glass-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '60px' }}>
@@ -19,7 +23,7 @@ export function PostList({ posts }: { posts: PostResponse[] }) {
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-        {posts.map(post => {
+        {(isExpanded ? posts : posts.slice(0, INITIAL_COUNT)).map(post => {
           const sentiment = post.sentimentResults?.[0];
           const label = sentiment?.label || 'neutral';
           const badgeColor = label === 'support' ? 'var(--accent-up)' : label === 'criticize' ? 'var(--accent-down)' : 'var(--text-muted)';
@@ -133,6 +137,24 @@ export function PostList({ posts }: { posts: PostResponse[] }) {
           )
         })}
       </div>
+
+      {posts.length > INITIAL_COUNT && (
+        <button 
+          onClick={() => setIsExpanded(!isExpanded)}
+          style={{ 
+            width: '100%', padding: '12px', background: 'rgba(0,0,0,0.2)', 
+            border: 'none', color: 'var(--accent-brand)', fontSize: '12px', 
+            fontWeight: 800, display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', gap: '8px', cursor: 'pointer' 
+          }}
+        >
+          {isExpanded ? (
+            <>COLLAPSE_POSTS <ChevronUp size={14} /></>
+          ) : (
+            <>VIEW_ALL_POSTS ({posts.length}) <ChevronDown size={14} /></>
+          )}
+        </button>
+      )}
 
       <style>{`
         .post-item { transition: background 0.1s; }

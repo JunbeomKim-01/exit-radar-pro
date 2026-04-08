@@ -67,9 +67,12 @@ export function SentimentInsight({ insight, loading }: SentimentInsightProps) {
       <div className="terminal-header" style={{ padding: '6px 12px', fontSize: '13px', background: 'rgba(0,0,0,0.2)', borderBottom: `1px solid ${config.color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <StatusIcon size={14} color={config.color} />
-          <span style={{ fontWeight: 700, color: 'var(--text-active)' }}>AI Intelligence Report</span>
+          <span style={{ fontWeight: 700, color: 'var(--text-active)', letterSpacing: '0.05em' }}>AI_CUMULATIVE_REPORT</span>
         </div>
-        <span style={{ fontSize: '10px', fontWeight: 700, color: config.color }}>{config.label}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: '4px' }}>TODAY_RECENT_AGGREGATE</span>
+          <span style={{ fontSize: '10px', fontWeight: 700, color: config.color }}>{config.label}</span>
+        </div>
       </div>
 
       <div style={{ padding: '0 8px' }}>

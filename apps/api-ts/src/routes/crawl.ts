@@ -232,10 +232,10 @@ export async function crawlRoutes(app: FastifyInstance) {
       });
     }
 
-    // CrawlJob 업데이트
+    // CrawlJob 업데이트 및 AI 인사이트 즉각 재건 트리거
     if (jobId) {
       try {
-        await prisma.crawlJob.update({
+        const updatedJob = await prisma.crawlJob.update({
           where: { id: jobId },
           data: {
             status: isLastChunk ? "completed" : "running",
@@ -243,8 +243,17 @@ export async function crawlRoutes(app: FastifyInstance) {
             completedAt: isLastChunk ? new Date() : undefined,
           },
         });
+
+        // 수집 완료 시 AI 통찰 즉각 재건 (비동기)
+        if (isLastChunk && updatedJob.ticker) {
+          const { rebuildSentimentInsight } = await import("../services/sentiment-service");
+          logger.info(`수집 완료: [${updatedJob.ticker}] AI 통찰 재건 시작...`);
+          rebuildSentimentInsight(updatedJob.ticker).catch(err => {
+            logger.error(`수집 후 AI 통찰 재건 실패 [${updatedJob.ticker}]:`, err);
+          });
+        }
       } catch (err) {
-        logger.warn(`CrawlJob 업데이트 건너뜐 (ID: ${jobId} 찾을 수 없음)`);
+        logger.warn(`CrawlJob 업데이트 건너뜀 (ID: ${jobId} 찾을 수 없음)`);
       }
     }
 

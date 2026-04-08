@@ -288,6 +288,13 @@ function evaluateBottomCandidate(f: ReversalFeatures): { core: SignalBreakdown[]
       description: `거래량/20DMA ${f.volumeVs20dma.toFixed(2)}x`,
       triggered: f.volumeVs20dma > 1.1,
     },
+    {
+      name: "Yield Curve",
+      maxScore: 6,
+      score: f.yieldCurve > 0 ? 6 : f.yieldCurve > -0.1 ? 3 : 0,
+      description: `장단기 금리차 ${f.yieldCurve.toFixed(2)}% (정상화 시 시그널)`,
+      triggered: f.yieldCurve > 0,
+    }
   ];
 
   return { core, support };
