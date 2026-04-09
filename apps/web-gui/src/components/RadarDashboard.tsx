@@ -183,9 +183,9 @@ export function RadarDashboard() {
                       />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <label style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)' }}>BIRTHDAY (8 DIGITS)</label>
+                      <label style={{ fontSize: '10px', fontWeight: 900, color: 'var(--text-muted)' }}>BIRTHDAY (6 DIGITS)</label>
                       <input 
-                        required type="text" placeholder="19900101" maxLength={8}
+                        required type="text" placeholder="900101" maxLength={8}
                         value={formData.birthday} onChange={e => setFormData({...formData, birthday: e.target.value})}
                         style={{ width: '100%', padding: '12px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', fontSize: '14px' }}
                       />
